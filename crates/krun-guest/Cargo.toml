@@ -1,0 +1,22 @@
+[package]
+name = "krun-guest"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+description = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+anyhow = { workspace = true, features = ["std"] }
+bpaf = { workspace = true, features = [] }
+env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
+log = { workspace = true, features = ["kv"] }
+nix = { workspace = true, features = ["user"] }
+rustix = { workspace = true, features = ["fs", "mount", "std", "system", "use-libc-auxv"] }
+tempfile = { workspace = true, features = [] }
+utils = { workspace = true, features = [] }
+
+[features]
+default = []

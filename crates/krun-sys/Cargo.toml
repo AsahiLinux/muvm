@@ -1,0 +1,15 @@
+[package]
+name = "krun-sys"
+version = "1.8.1"
+edition = { workspace = true }
+rust-version = { workspace = true }
+repository = "https://github.com/containers/libkrun"
+license = "Apache-2.0"
+links = "krun"
+publish = false
+
+[build-dependencies]
+bindgen = { workspace = true, features = ["logging"] }
+
+[features]
+default = []
