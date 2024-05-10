@@ -1,7 +1,7 @@
 use std::{
     fmt,
     os::{
-        fd::{AsRawFd, IntoRawFd, OwnedFd},
+        fd::{AsRawFd, IntoRawFd},
         unix::net::UnixStream,
     },
     path::Path,
@@ -10,10 +10,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use log::debug;
-use rustix::{
-    io::dup,
-    net::{socketpair, AddressFamily, SocketFlags, SocketType},
-};
+use rustix::io::dup;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NetMode {
@@ -28,23 +25,23 @@ where
     Ok(UnixStream::connect(passt_socket_path)?)
 }
 
-pub fn start_passt() -> Result<OwnedFd> {
-    let (parent_fd, child_fd) = socketpair(
-        AddressFamily::UNIX,
-        SocketType::STREAM,
-        // SAFETY: The child process should not inherit `parent_fd`.
-        SocketFlags::CLOEXEC,
-        None,
-    )?;
+pub fn start_passt() -> Result<UnixStream> {
+    // SAFETY: The child process should not inherit the file descriptor of `parent_socket`.
+    // There is no documented guarantee of this, but the implementation as of writing atomically
+    // sets `SOCK_CLOEXEC`.
+    // See https://github.com/rust-lang/rust/blob/1.77.0/library/std/src/sys/pal/unix/net.rs#L124-L125
+    // See https://github.com/rust-lang/rust/issues/47946#issuecomment-364776373
+    let (parent_socket, child_socket) =
+        UnixStream::pair().context("Failed to create socket pair for `passt` child process")?;
 
-    // SAFETY: The parent process should not keep `child_fd` open. It is an `OwnedFd` so it will be
-    // closed on drop.
+    // SAFETY: The parent process should not keep the file descriptor of `child_socket` open.
+    // It is a `UnixStream` so the file descriptor will be closed on drop.
     // See https://doc.rust-lang.org/std/io/index.html#io-safety
     //
     // The `dup` call clears the `FD_CLOEXEC` flag on the new `child_fd`, which should be inherited
     // by the child process.
-    let child_fd =
-        dup(child_fd).context("Failed to duplicate file descriptor for `passt` child process")?;
+    let child_fd = dup(child_socket)
+        .context("Failed to duplicate file descriptor for `passt` child process")?;
 
     debug!(fd = child_fd.as_raw_fd(); "passing fd to passt");
 
@@ -59,5 +56,5 @@ pub fn start_passt() -> Result<OwnedFd> {
         return Err(err).context("Failed to execute `passt` as child process");
     }
 
-    Ok(parent_fd)
+    Ok(parent_socket)
 }

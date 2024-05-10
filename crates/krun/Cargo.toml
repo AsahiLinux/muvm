@@ -15,7 +15,7 @@ env_logger = { workspace = true, features = ["auto-color", "humantime", "unstabl
 krun-sys = { workspace = true, features = [] }
 log = { workspace = true, features = ["kv"] }
 nix = { workspace = true, features = ["user"] }
-rustix = { workspace = true, features = ["net", "process", "std", "use-libc-auxv"] }
+rustix = { workspace = true, features = ["process", "std", "use-libc-auxv"] }
 utils = { workspace = true, features = [] }
 
 [features]
