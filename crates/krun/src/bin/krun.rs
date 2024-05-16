@@ -222,7 +222,7 @@ fn main() -> Result<()> {
                         Ok(compatible) => {
                             // ...
                         },
-                        Err(err) => if err.kind() == ErrorKind::NotFound {
+                        Err(err) if err.kind() == ErrorKind::NotFound => {
                             continue;
                         },
                         Err(err) => Err(err).context("Failed to read `/proc/device-tree/compatible`")?,
