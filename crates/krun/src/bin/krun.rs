@@ -210,7 +210,7 @@ fn main() -> Result<()> {
     ];
 
     // https://github.com/AsahiLinux/docs/wiki/Devices
-    const ASAHI_SOC_DEV_IDS: [&str; 12] = [
+    const ASAHI_SOC_COMPAT_IDS: [&str; 12] = [
         "apple,t8103",
         "apple,t6000",
         "apple,t6001",
