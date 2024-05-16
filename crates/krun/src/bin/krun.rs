@@ -218,9 +218,15 @@ fn main() -> Result<()> {
             Ok(value) => value,
             Err(VarError::NotPresent) => {
                 if key == "MESA_LOADER_DRIVER_OVERRIDE" {
-                    for compatible in fs::read_to_string("/proc/device-tree/compatible")
-                        .unwrap_or("".to_string())
-                        .split(&[',', '\0'][..])
+                    match fs::read_to_string("/proc/device-tree/compatible") {
+                        Ok(compatible) => {
+                            // ...
+                        },
+                        Err(err) => if err.kind() == ErrorKind::NotFound {
+                            continue;
+                        },
+                        Err(err) => Err(err).context("Failed to read `/proc/device-tree/compatible`")?,
+                    }
                     {
                         if ASAHI_SOC_DEV_IDS.iter().any(|&s| s == compatible) {
                             env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
