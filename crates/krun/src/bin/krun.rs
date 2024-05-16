@@ -211,8 +211,18 @@ fn main() -> Result<()> {
 
     // https://github.com/AsahiLinux/docs/wiki/Devices
     const ASAHI_SOC_DEV_IDS: [&str; 12] = [
-        "t8103", "t6000", "t6001", "t6002", "t8112", "t6020", "t6021", "t6022", "t8122", "t6030",
-        "t6031", "t6034",
+        "apple,t8103",
+        "apple,t6000",
+        "apple,t6001",
+        "apple,t6002",
+        "apple,t8112",
+        "apple,t6020",
+        "apple,t6021",
+        "apple,t6022",
+        "apple,t8122",
+        "apple,t6030",
+        "apple,t6031",
+        "apple,t6034",
     ];
     for key in WELL_KNOWN_ENV_VARS {
         let value = match env::var(key) {
@@ -221,7 +231,7 @@ fn main() -> Result<()> {
                 if key == "MESA_LOADER_DRIVER_OVERRIDE" {
                     match fs::read_to_string("/proc/device-tree/compatible") {
                         Ok(compatibles) => {
-                            for compatible in compatibles.split(&[',', '\0'][..]) {
+                            for compatible in compatibles.split('\0') {
                                 if ASAHI_SOC_DEV_IDS.iter().any(|&s| s == compatible) {
                                     env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
                                     break;
