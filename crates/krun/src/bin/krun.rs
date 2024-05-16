@@ -2,6 +2,7 @@ use std::{
     env::{self, VarError},
     ffi::{c_char, CString},
     fs,
+    io::ErrorKind,
     os::fd::{IntoRawFd, OwnedFd},
 };
 
@@ -219,18 +220,20 @@ fn main() -> Result<()> {
             Err(VarError::NotPresent) => {
                 if key == "MESA_LOADER_DRIVER_OVERRIDE" {
                     match fs::read_to_string("/proc/device-tree/compatible") {
-                        Ok(compatible) => {
-                            // ...
+                        Ok(compatibles) => {
+                            for compatible in compatibles.split(&[',', '\0'][..]) {
+                                if ASAHI_SOC_DEV_IDS.iter().any(|&s| s == compatible) {
+                                    env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
+                                    break;
+                                }
+                            }
                         },
                         Err(err) if err.kind() == ErrorKind::NotFound => {
                             continue;
                         },
-                        Err(err) => Err(err).context("Failed to read `/proc/device-tree/compatible`")?,
-                    }
-                    {
-                        if ASAHI_SOC_DEV_IDS.iter().any(|&s| s == compatible) {
-                            env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
-                        }
+                        Err(err) => {
+                            Err(err).context("Failed to read `/proc/device-tree/compatible`")?
+                        },
                     }
                 }
                 continue;
