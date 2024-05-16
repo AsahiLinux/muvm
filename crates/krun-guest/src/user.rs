@@ -36,8 +36,6 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<()> {
         env::set_var("HOME", user.dir);
     }
 
-    env::set_var("MESA_LOADER_DRIVER_OVERRIDE", "asahi");
-
     Ok(())
 }
 

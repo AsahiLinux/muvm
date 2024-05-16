@@ -1,6 +1,7 @@
 use std::{
     env::{self, VarError},
     ffi::{c_char, CString},
+    fs::read_to_string,
     os::fd::{IntoRawFd, OwnedFd},
 };
 
@@ -206,10 +207,25 @@ fn main() -> Result<()> {
         "PATH",                        // needed by `krun-guest` program
         "RUST_LOG",
     ];
+
+    // https://github.com/AsahiLinux/docs/wiki/Devices
+    const ASAHI_DEVS: [&str; 12] = [
+        "t8103", "t6000", "t6001", "t6002", "t8112", "t6020", "t6021", "t6022", "t8121", "t6030",
+        "t6031", "t6034",
+    ];
     for key in WELL_KNOWN_ENV_VARS {
         let value = match env::var(key) {
             Ok(value) => value,
             Err(VarError::NotPresent) => {
+                if key == "MESA_LOADER_DRIVER_OVERRIDE" {
+                    for compatible in
+                        read_to_string("/proc/device-tree/compatible")?.split(&[',', '\0'][..])
+                    {
+                        if ASAHI_DEVS.iter().any(|&s| s == compatible) {
+                            env.push(CString::new("MESA_LOADER_DRIVER_OVERRIDE=asahi")?);
+                        }
+                    }
+                }
                 continue;
             },
             Err(err) => Err(err).with_context(|| format!("Failed to get `{key}` env var"))?,
