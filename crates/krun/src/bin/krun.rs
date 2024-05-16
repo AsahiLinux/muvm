@@ -222,7 +222,7 @@ fn main() -> Result<()> {
                         read_to_string("/proc/device-tree/compatible")?.split(&[',', '\0'][..])
                     {
                         if ASAHI_DEVS.iter().any(|&s| s == compatible) {
-                            env.push(CString::new("MESA_LOADER_DRIVER_OVERRIDE=asahi")?);
+                            env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
                         }
                     }
                 }
