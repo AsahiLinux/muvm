@@ -1,7 +1,7 @@
 use std::{
     env::{self, VarError},
     ffi::{c_char, CString},
-    fs::read_to_string,
+    fs,
     os::fd::{IntoRawFd, OwnedFd},
 };
 
@@ -218,8 +218,9 @@ fn main() -> Result<()> {
             Ok(value) => value,
             Err(VarError::NotPresent) => {
                 if key == "MESA_LOADER_DRIVER_OVERRIDE" {
-                    for compatible in
-                        read_to_string("/proc/device-tree/compatible")?.split(&[',', '\0'][..])
+                    for compatible in fs::read_to_string("/proc/device-tree/compatible")
+                        .unwrap_or("".to_string())
+                        .split(&[',', '\0'][..])
                     {
                         if ASAHI_DEVS.iter().any(|&s| s == compatible) {
                             env.push(CString::new("MESA_LOADER_DRIVER_OVERRIDE=asahi")?);
