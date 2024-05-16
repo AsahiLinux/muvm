@@ -222,7 +222,7 @@ fn main() -> Result<()> {
                         .unwrap_or("".to_string())
                         .split(&[',', '\0'][..])
                     {
-                        if ASAHI_DEVS.iter().any(|&s| s == compatible) {
+                        if ASAHI_SOC_DEV_IDS.iter().any(|&s| s == compatible) {
                             env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
                         }
                     }
