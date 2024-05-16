@@ -210,7 +210,7 @@ fn main() -> Result<()> {
 
     // https://github.com/AsahiLinux/docs/wiki/Devices
     const ASAHI_DEVS: [&str; 12] = [
-        "t8103", "t6000", "t6001", "t6002", "t8112", "t6020", "t6021", "t6022", "t8121", "t6030",
+        "t8103", "t6000", "t6001", "t6002", "t8112", "t6020", "t6021", "t6022", "t8122", "t6030",
         "t6031", "t6034",
     ];
     for key in WELL_KNOWN_ENV_VARS {
@@ -223,7 +223,7 @@ fn main() -> Result<()> {
                         .split(&[',', '\0'][..])
                     {
                         if ASAHI_DEVS.iter().any(|&s| s == compatible) {
-                            env.push(CString::new("MESA_LOADER_DRIVER_OVERRIDE=asahi")?);
+                            env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
                         }
                     }
                 }
