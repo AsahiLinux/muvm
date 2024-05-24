@@ -3,7 +3,7 @@ use std::{os::unix::process::CommandExt as _, process::Command};
 use anyhow::{Context, Result};
 use krun_guest::{
     cli_options::options, fex::setup_fex, mount::mount_filesystems, net::configure_network,
-    sommelier::exec_sommelier, user::setup_user,
+    pulse::setup_pulse_proxy, sommelier::exec_sommelier, user::setup_user,
 };
 use log::debug;
 
@@ -20,9 +20,12 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    if let Err(err) = setup_user(options.username, options.uid, options.gid) {
-        return Err(err).context("Couldn't set up user, bailing out");
-    }
+    let run_path = match setup_user(options.username, options.uid, options.gid) {
+        Ok(p) => p,
+        Err(err) => return Err(err).context("Couldn't set up user, bailing out"),
+    };
+
+    setup_pulse_proxy(run_path)?;
 
     // Will not return if successful.
     exec_sommelier(&options.command, &options.command_args)

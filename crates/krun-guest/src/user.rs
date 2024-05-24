@@ -2,29 +2,27 @@ use std::{
     env,
     fs::{read_dir, Permissions},
     os::unix::fs::{chown, PermissionsExt as _},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Context, Result};
 use nix::unistd::{setgid, setuid, Gid, Uid, User};
 
-pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<()> {
+pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
     setup_directories(uid, gid)?;
 
     setgid(gid).context("Failed to setgid")?;
     setuid(uid).context("Failed to setuid")?;
 
-    {
-        let path = tempfile::Builder::new()
-            .prefix(&format!("krun-run-{uid}-"))
-            .permissions(Permissions::from_mode(0o755))
-            .tempdir()
-            .context("Failed to create temp dir for `XDG_RUNTIME_DIR`")?
-            .into_path();
-        // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
-        // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
-        env::set_var("XDG_RUNTIME_DIR", path);
-    }
+    let path = tempfile::Builder::new()
+        .prefix(&format!("krun-run-{uid}-"))
+        .permissions(Permissions::from_mode(0o755))
+        .tempdir()
+        .context("Failed to create temp dir for `XDG_RUNTIME_DIR`")?
+        .into_path();
+    // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
+    // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
+    env::set_var("XDG_RUNTIME_DIR", &path);
 
     let user = User::from_name(&username)
         .map_err(Into::into)
@@ -37,7 +35,7 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<()> {
         env::set_var("HOME", user.dir);
     }
 
-    Ok(())
+    Ok(path)
 }
 
 fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
@@ -56,7 +54,7 @@ fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
 
     if Path::new("/dev/vsock").exists() {
         chown("/dev/vsock", Some(uid.into()), Some(gid.into()))
-            .with_context(|| "Failed to chown /dev/vsock".to_string())?;
+            .context("Failed to chown `/dev/vsock`")?;
     }
 
     Ok(())
