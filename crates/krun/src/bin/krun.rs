@@ -5,6 +5,7 @@ use std::{
     fs,
     io::ErrorKind,
     os::fd::{IntoRawFd, OwnedFd},
+    path::Path,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -14,9 +15,10 @@ use krun::{
     types::{MiB, NetMode},
 };
 use krun_sys::{
-    krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level, krun_set_passt_fd,
-    krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
-    VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
+    krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
+    krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
+    VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB,
+    VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
 use nix::{sys::sysinfo::sysinfo, unistd::User};
@@ -121,6 +123,24 @@ fn main() -> Result<()> {
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure net mode");
+        }
+    }
+
+    if let Ok(run_path) = env::var("XDG_RUNTIME_DIR") {
+        let pulse_path = Path::new(&run_path).join("pulse/native");
+        if pulse_path.exists() {
+            let pulse_path = CString::new(
+                pulse_path
+                    .to_str()
+                    .expect("pulse_path should not contain invalid UTF-8"),
+            )
+            .context("Failed to process `pulse/native` path as it contains NUL character")?;
+            // SAFETY: `pulse_path` is a pointer to a `CString` with long enough lifetime.
+            let err = unsafe { krun_add_vsock_port(ctx_id, 3333, pulse_path.as_ptr()) };
+            if err < 0 {
+                let err = Errno::from_raw_os_error(-err);
+                return Err(err).context("Failed to configure vsock for pulse socket");
+            }
         }
     }
 
