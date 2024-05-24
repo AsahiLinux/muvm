@@ -2,6 +2,7 @@ use std::{
     env,
     fs::{read_dir, Permissions},
     os::unix::fs::{chown, PermissionsExt as _},
+    path::Path,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -51,6 +52,11 @@ fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
             chown(&path, Some(uid.into()), Some(gid.into()))
                 .with_context(|| format!("Failed to chown {path:?}"))?;
         }
+    }
+
+    if Path::new("/dev/vsock").exists() {
+        chown("/dev/vsock", Some(uid.into()), Some(gid.into()))
+            .with_context(|| "Failed to chown /dev/vsock".to_string())?;
     }
 
     Ok(())
