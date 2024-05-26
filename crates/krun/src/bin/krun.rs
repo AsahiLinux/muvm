@@ -1,4 +1,5 @@
 use std::{
+    cmp,
     env::{self, VarError},
     ffi::{c_char, CString},
     fs,
@@ -9,7 +10,8 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use krun::{
     cli_options::options,
-    net::{connect_to_passt, start_passt, NetMode},
+    net::{connect_to_passt, start_passt},
+    types::{MiB, NetMode},
 };
 use krun_sys::{
     krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level, krun_set_passt_fd,
@@ -17,7 +19,7 @@ use krun_sys::{
     VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
-use nix::unistd::User;
+use nix::{sys::sysinfo::sysinfo, unistd::User};
 use rustix::{
     io::Errno,
     process::{geteuid, getgid, getrlimit, getuid, setrlimit, Resource},
@@ -58,10 +60,17 @@ fn main() -> Result<()> {
     };
 
     {
-        // Configure the number of vCPUs (4) and the amount of RAM (4096 MiB).
+        let ram_mib = if let Some(ram_mib) = options.mem {
+            ram_mib
+        } else {
+            let sysinfo = sysinfo().context("Failed to get system information")?;
+            let ram_total = sysinfo.ram_total() / 1024 / 1024;
+            cmp::min(MiB::from((ram_total as f64 * 0.8) as u32), MiB::from(16384))
+        };
+        // Configure the number of vCPUs (4) and the amount of RAM (max 16384 MiB).
         //
         // SAFETY: Safe as no pointers involved.
-        let err = unsafe { krun_set_vm_config(ctx_id, 4, 4096) };
+        let err = unsafe { krun_set_vm_config(ctx_id, 4, ram_mib.into()) };
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err)

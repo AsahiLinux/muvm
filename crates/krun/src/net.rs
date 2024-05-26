@@ -12,12 +12,6 @@ use anyhow::{Context, Result};
 use log::debug;
 use rustix::io::dup;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum NetMode {
-    PASST = 0,
-    TSI,
-}
-
 pub fn connect_to_passt<P>(passt_socket_path: P) -> Result<UnixStream>
 where
     P: AsRef<Path> + fmt::Debug,
