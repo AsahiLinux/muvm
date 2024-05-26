@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use bpaf::{any, construct, long, positional, OptionParser, Parser};
 
-use crate::net::NetMode;
+use crate::types::{MiB, NetMode};
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub env: Vec<(String, Option<String>)>,
+    pub mem: Option<MiB>,
     pub net: NetMode,
     pub passt_socket: Option<PathBuf>,
     pub command: String,
@@ -29,6 +30,22 @@ pub fn options() -> OptionParser<Options> {
             None => Ok((s, None)),
         })
         .many();
+    let mem = long("mem")
+        .help(
+            "The amount of RAM, in MiB, that will be available to this microVM.
+            The memory configured for the microVM will not be reserved
+            immediately. Instead, it will be provided as the guest demands it,
+            and both the guest and libkrun (acting as the Virtual Machine
+            Monitor) will attempt to return as many pages as possible to the
+            host.
+    [default: 80% of total RAM]",
+        )
+        .argument("MEM")
+        .guard(
+            |&mem| mem <= MiB::from(16384),
+            "the maximum amount of RAM supported is 16384 MiB",
+        )
+        .optional();
     let net = long("net")
         .help(
             "Set network mode
@@ -55,6 +72,7 @@ pub fn options() -> OptionParser<Options> {
 
     construct!(Options {
         env,
+        mem,
         net,
         passt_socket,
         // positionals
