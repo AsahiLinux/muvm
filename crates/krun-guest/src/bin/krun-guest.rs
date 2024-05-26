@@ -6,11 +6,21 @@ use krun_guest::{
     sommelier::exec_sommelier, user::setup_user,
 };
 use log::debug;
+use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
     env_logger::init();
 
     let options = options().run();
+
+    {
+        // Raise RLIMIT_NOFILE to the maximum allowed. This is required for wine's esync to work.
+        // See https://github.com/lutris/docs/blob/master/HowToEsync.md
+        // See https://github.com/zfigura/wine/blob/esync/README.esync
+        let mut rlim = getrlimit(Resource::Nofile);
+        rlim.current = rlim.maximum;
+        setrlimit(Resource::Nofile, rlim).context("Failed to raise `RLIMIT_NOFILE`")?;
+    }
 
     if let Err(err) = mount_filesystems() {
         return Err(err).context("Couldn't mount filesystems, bailing out");
