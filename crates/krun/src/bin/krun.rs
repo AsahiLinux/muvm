@@ -11,6 +11,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use krun::{
     cli_options::options,
+    cpu::{get_fallback_cores, get_performance_cores},
     net::{connect_to_passt, start_passt},
     types::{MiB, NetMode},
 };
@@ -24,7 +25,7 @@ use log::debug;
 use nix::{sys::sysinfo::sysinfo, unistd::User};
 use rustix::{
     io::Errno,
-    process::{geteuid, getgid, getrlimit, getuid, setrlimit, Resource},
+    process::{geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource},
 };
 use utils::env::find_in_path;
 
@@ -62,6 +63,16 @@ fn main() -> Result<()> {
     };
 
     {
+        let cpu_list = if !options.cpu_list.is_empty() {
+            options.cpu_list
+        } else {
+            get_performance_cores()
+                .inspect_err(|err| {
+                    debug!(err:?; "Failed to get CPU performance cores");
+                })
+                .or_else(|_err| get_fallback_cores())?
+        };
+        let num_vcpus = cpu_list.iter().fold(0, |acc, cpus| acc + cpus.len()) as u8;
         let ram_mib = if let Some(ram_mib) = options.mem {
             ram_mib
         } else {
@@ -69,10 +80,20 @@ fn main() -> Result<()> {
             let ram_total = sysinfo.ram_total() / 1024 / 1024;
             cmp::min(MiB::from((ram_total as f64 * 0.8) as u32), MiB::from(16384))
         };
-        // Configure the number of vCPUs (4) and the amount of RAM (max 16384 MiB).
+        // Bind the microVM to the specified CPU cores.
+        let mut cpuset = CpuSet::new();
+        for cpus in cpu_list {
+            for cpu in cpus {
+                cpuset.set(cpu as usize);
+            }
+        }
+        debug!(cpuset:?; "sched_setaffinity");
+        sched_setaffinity(None, &cpuset).context("Failed to set CPU affinity")?;
+        // Configure the number of vCPUs and the amount of RAM (max 16384 MiB).
         //
         // SAFETY: Safe as no pointers involved.
-        let err = unsafe { krun_set_vm_config(ctx_id, 4, ram_mib.into()) };
+        debug!(num_vcpus, ram_mib = u32::from(ram_mib); "krun_set_vm_config");
+        let err = unsafe { krun_set_vm_config(ctx_id, num_vcpus, ram_mib.into()) };
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err)
