@@ -1,6 +1,6 @@
 use std::{
     env,
-    fs::{read_dir, Permissions},
+    fs::{self, Permissions},
     os::unix::fs::{chown, PermissionsExt as _},
     path::{Path, PathBuf},
 };
@@ -41,7 +41,7 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
 fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
     for dir in ["/dev/dri", "/dev/snd"] {
         let dir_iter =
-            read_dir(dir).with_context(|| format!("Failed to read directory `{dir}`"))?;
+            fs::read_dir(dir).with_context(|| format!("Failed to read directory `{dir}`"))?;
 
         for entry in dir_iter {
             let path = entry
