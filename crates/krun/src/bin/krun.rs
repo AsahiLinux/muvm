@@ -12,6 +12,7 @@ use anyhow::{anyhow, Context, Result};
 use krun::{
     cli_options::options,
     cpu::{get_fallback_cores, get_performance_cores},
+    lock::{lock_or_connect, LockResult},
     net::{connect_to_passt, start_passt},
     types::{MiB, NetMode},
 };
@@ -27,7 +28,7 @@ use rustix::{
     io::Errno,
     process::{geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource},
 };
-use utils::env::find_in_path;
+use utils::env::find_krun_exec;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -38,6 +39,15 @@ fn main() -> Result<()> {
     }
 
     let options = options().fallback_to_usage().run();
+
+    let _lock_file = match lock_or_connect(&options)? {
+        LockResult::LaunchRequested => {
+            // There was a krun instance already running and we've requested it
+            // to launch the command successfully, so all the work is done.
+            return Ok(());
+        },
+        LockResult::LockAcquired(lock_file) => lock_file,
+    };
 
     {
         // Set the log level to "off".
@@ -136,7 +146,9 @@ fn main() -> Result<()> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt().context("Failed to start `passt`")?.into()
+            start_passt(options.server_port)
+                .context("Failed to start `passt`")?
+                .into()
         };
         // SAFETY: `passt_fd` is an `OwnedFd` and consumed to prevent closing on drop.
         // See https://doc.rust-lang.org/std/io/index.html#io-safety
@@ -196,28 +208,8 @@ fn main() -> Result<()> {
         }
     }
 
-    let krun_guest_path =
-        find_in_path("krun-guest").context("Failed to check existence of `krun-guest`")?;
-    let krun_guest_path = if let Some(krun_guest_path) = krun_guest_path {
-        krun_guest_path
-    } else {
-        let krun_path = env::current_exe().and_then(|p| p.canonicalize());
-        let krun_path = krun_path.context("Failed to get path of current running executable")?;
-        krun_path.with_file_name(format!(
-            "{}-guest",
-            krun_path
-                .file_name()
-                .expect("krun_path should end with a file name")
-                .to_str()
-                .context("Failed to process `krun` file name as it contains invalid UTF-8")?
-        ))
-    };
-    let krun_guest_path = CString::new(
-        krun_guest_path
-            .to_str()
-            .context("Failed to process `krun-guest` path as it contains invalid UTF-8")?,
-    )
-    .context("Failed to process `krun-guest` path as it contains NUL character")?;
+    let krun_guest_path = find_krun_exec("krun-guest")?;
+    let krun_server_path = find_krun_exec("krun-server")?;
 
     let mut krun_guest_args: Vec<CString> = vec![
         CString::new(username).expect("username should not contain NUL character"),
@@ -226,6 +218,8 @@ fn main() -> Result<()> {
         CString::new(format!("{}", getgid().as_raw()))
             .expect("gid should not contain NUL character"),
     ];
+
+    krun_guest_args.push(krun_server_path);
     krun_guest_args.push(
         CString::new(options.command)
             .context("Failed to process command as it contains NUL character")?,
@@ -236,6 +230,7 @@ fn main() -> Result<()> {
             .context("Failed to process command arg as it contains NUL character")?;
         krun_guest_args.push(s);
     }
+
     let krun_guest_args: Vec<*const c_char> = {
         const KRUN_GUEST_ARGS_FIXED: usize = 4;
         // SAFETY: All pointers must be stored in the same allocation.
@@ -316,6 +311,8 @@ fn main() -> Result<()> {
         })?;
         env.push(s);
     }
+
+    env.push(CString::new(format!("KRUN_SERVER_PORT={}", options.server_port)).unwrap());
 
     debug!(env:?; "env vars");
 

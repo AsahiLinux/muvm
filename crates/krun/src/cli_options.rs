@@ -12,6 +12,7 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub net: NetMode,
     pub passt_socket: Option<PathBuf>,
+    pub server_port: u32,
     pub command: String,
     pub command_args: Vec<String>,
 }
@@ -86,6 +87,12 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
+    let server_port = long("server-port")
+        .short('p')
+        .help("Set the port to be used in server mode")
+        .argument("SERVER_PORT")
+        .fallback(3334)
+        .display_fallback();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -99,6 +106,7 @@ pub fn options() -> OptionParser<Options> {
         mem,
         net,
         passt_socket,
+        server_port,
         // positionals
         command,
         command_args,
