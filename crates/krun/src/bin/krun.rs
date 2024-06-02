@@ -14,7 +14,7 @@ use krun::{
     cpu::{get_fallback_cores, get_performance_cores},
     lock::{lock_or_connect, LockResult},
     net::{connect_to_passt, start_passt},
-    types::{MiB, NetMode},
+    types::MiB,
 };
 use krun_sys::{
     krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
@@ -140,7 +140,7 @@ fn main() -> Result<()> {
         }
     }
 
-    if options.net == NetMode::PASST {
+    {
         let passt_fd: OwnedFd = if let Some(passt_socket) = options.passt_socket {
             connect_to_passt(passt_socket)
                 .context("Failed to connect to `passt`")?

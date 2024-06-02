@@ -3,14 +3,13 @@ use std::{ops::Range, path::PathBuf};
 use anyhow::{anyhow, Context};
 use bpaf::{any, construct, long, positional, OptionParser, Parser};
 
-use crate::types::{MiB, NetMode};
+use crate::types::MiB;
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub cpu_list: Vec<Range<u16>>,
     pub env: Vec<(String, Option<String>)>,
     pub mem: Option<MiB>,
-    pub net: NetMode,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
     pub command: String,
@@ -70,19 +69,6 @@ pub fn options() -> OptionParser<Options> {
             "the maximum amount of RAM supported is 16384 MiB",
         )
         .optional();
-    let net = long("net")
-        .help(
-            "Set network mode
-            NET_MODE can be either PASST (default) or TSI",
-        )
-        .argument::<String>("NET_MODE")
-        .fallback("PASST".to_owned())
-        .display_fallback()
-        .parse(|s| match &*s.to_ascii_uppercase() {
-            "PASST" => Ok(NetMode::PASST),
-            "TSI" => Ok(NetMode::TSI),
-            _ => Err(anyhow!("invalid NET_MODE value")),
-        });
     let passt_socket = long("passt-socket")
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
@@ -104,7 +90,6 @@ pub fn options() -> OptionParser<Options> {
         cpu_list,
         env,
         mem,
-        net,
         passt_socket,
         server_port,
         // positionals
