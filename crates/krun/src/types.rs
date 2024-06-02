@@ -3,12 +3,6 @@ use std::{num::ParseIntError, str::FromStr};
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct MiB(u32);
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum NetMode {
-    PASST = 0,
-    TSI,
-}
-
 impl From<u32> for MiB {
     fn from(value: u32) -> Self {
         Self(value)
