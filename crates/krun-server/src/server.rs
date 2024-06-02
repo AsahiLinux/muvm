@@ -1,16 +1,13 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use log::debug;
-use utils::launch::Launch;
+use utils::{launch::Launch, stdio::make_stdout_stderr};
 
 pub fn start_server(listener: TcpListener) -> JoinHandle<()> {
     thread::spawn(move || {
@@ -44,31 +41,6 @@ fn read_request(mut stream: &TcpStream) -> Result<Launch> {
             return Ok(launch);
         }
     }
-}
-
-fn make_stdout_stderr<P>(command: P, envs: &HashMap<String, String>) -> Result<(Stdio, Stdio)>
-where
-    P: AsRef<Path>,
-{
-    let command = command.as_ref();
-    let filename = command
-        .file_name()
-        .context("Failed to obtain basename from command path")?;
-    let filename = filename
-        .to_str()
-        .context("Failed to process command as it contains invalid UTF-8")?;
-    let base = if envs.contains_key("XDG_RUNTIME_DIR") {
-        Path::new(&envs["XDG_RUNTIME_DIR"])
-    } else {
-        Path::new("/tmp")
-    };
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-    let path_stdout = base.join(format!("krun-{filename}-{ts}.stdout"));
-    let path_stderr = base.join(format!("krun-{filename}-{ts}.stderr"));
-    Ok((
-        File::create_new(path_stdout)?.into(),
-        File::create_new(path_stderr)?.into(),
-    ))
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
