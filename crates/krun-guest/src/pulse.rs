@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 use utils::env::find_in_path;
+use utils::stdio::make_stdout_stderr;
 
 pub fn setup_pulse_proxy<P>(run_path: P) -> Result<()>
 where
@@ -13,6 +16,9 @@ where
     let Some(socat_path) = socat_path else {
         return Ok(());
     };
+
+    let envs: HashMap<String, String> = env::vars().collect();
+    let (stdout, stderr) = make_stdout_stderr(&socat_path, &envs)?;
 
     let run_path = run_path.as_ref();
     let pulse_path = run_path.join("pulse");
@@ -27,6 +33,9 @@ where
                 .expect("pulse_path should not contain invalid UTF-8")
         ))
         .arg("VSOCK-CONNECT:2:3333")
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
         .spawn()
         .context("Failed to execute `socat` as child process")?;
 
