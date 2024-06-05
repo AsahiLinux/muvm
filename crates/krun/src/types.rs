@@ -1,4 +1,5 @@
-use std::{num::ParseIntError, str::FromStr};
+use std::num::ParseIntError;
+use std::str::FromStr;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct MiB(u32);

@@ -1,16 +1,16 @@
+use std::path::PathBuf;
+
 use anyhow::Context;
 use bpaf::{any, construct, positional, OptionParser, Parser};
-use nix::{
-    libc::{gid_t, uid_t},
-    unistd::{Gid, Uid},
-};
+use nix::libc::{gid_t, uid_t};
+use nix::unistd::{Gid, Uid};
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub username: String,
     pub uid: Uid,
     pub gid: Gid,
-    pub command: String,
+    pub command: PathBuf,
     pub command_args: Vec<String>,
 }
 

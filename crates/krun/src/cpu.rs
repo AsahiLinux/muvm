@@ -1,4 +1,6 @@
-use std::{cmp::Ordering, fs, ops::Range};
+use std::cmp::Ordering;
+use std::fs;
+use std::ops::Range;
 
 use anyhow::{Context, Result};
 use rustix::process::{sched_getaffinity, CpuSet};
@@ -48,7 +50,7 @@ pub fn get_fallback_cores() -> Result<Vec<Range<u16>>> {
     let cpuset = sched_getaffinity(None).context("Failed to get CPU affinity")?;
     let cpu_count = cpuset.count();
     let mut cpu_list = vec![];
-    let num_cpus = 0;
+    let mut num_cpus = 0;
 
     for i in 0..(CpuSet::MAX_CPU as u16) {
         if num_cpus >= cpu_count {
@@ -56,6 +58,7 @@ pub fn get_fallback_cores() -> Result<Vec<Range<u16>>> {
         }
         if cpuset.is_set(i as usize) {
             cpu_list.push(i..(i + 1));
+            num_cpus += 1;
         }
     }
 

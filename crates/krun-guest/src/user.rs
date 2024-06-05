@@ -1,9 +1,7 @@
-use std::{
-    env,
-    fs::{self, Permissions},
-    os::unix::fs::{chown, PermissionsExt as _},
-    path::{Path, PathBuf},
-};
+use std::env;
+use std::fs::{self, Permissions};
+use std::os::unix::fs::{chown, PermissionsExt as _};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use nix::unistd::{setgid, setuid, Gid, Uid, User};

@@ -1,10 +1,9 @@
-use std::{fs::OpenOptions, os::fd::AsFd};
+use std::fs::File;
+use std::os::fd::AsFd;
 
 use anyhow::{Context, Result};
-use rustix::{
-    fs::CWD,
-    mount::{mount2, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags},
-};
+use rustix::fs::CWD;
+use rustix::mount::{mount2, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags};
 
 pub fn mount_filesystems() -> Result<()> {
     mount2(
@@ -16,7 +15,7 @@ pub fn mount_filesystems() -> Result<()> {
     )
     .context("Failed to mount `/var/run`")?;
 
-    let _ = OpenOptions::new()
+    let _ = File::options()
         .write(true)
         .create(true)
         .truncate(true)

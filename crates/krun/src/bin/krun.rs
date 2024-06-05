@@ -1,21 +1,15 @@
-use std::{
-    cmp,
-    env::{self, VarError},
-    ffi::{c_char, CString},
-    fs,
-    io::ErrorKind,
-    os::fd::{IntoRawFd, OwnedFd},
-    path::Path,
-};
+use std::ffi::{c_char, CString};
+use std::os::fd::{IntoRawFd, OwnedFd};
+use std::path::Path;
+use std::{cmp, env};
 
 use anyhow::{anyhow, Context, Result};
-use krun::{
-    cli_options::options,
-    cpu::{get_fallback_cores, get_performance_cores},
-    lock::{lock_or_connect, LockResult},
-    net::{connect_to_passt, start_passt},
-    types::MiB,
-};
+use krun::cli_options::options;
+use krun::cpu::{get_fallback_cores, get_performance_cores};
+use krun::env::{find_krun_exec, prepare_env_vars};
+use krun::launch::{launch_or_lock, LaunchResult};
+use krun::net::{connect_to_passt, start_passt};
+use krun::types::MiB;
 use krun_sys::{
     krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
     krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
@@ -23,12 +17,12 @@ use krun_sys::{
     VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
-use nix::{sys::sysinfo::sysinfo, unistd::User};
-use rustix::{
-    io::Errno,
-    process::{geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource},
+use nix::sys::sysinfo::sysinfo;
+use nix::unistd::User;
+use rustix::io::Errno;
+use rustix::process::{
+    geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
-use utils::env::find_krun_exec;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -40,13 +34,23 @@ fn main() -> Result<()> {
 
     let options = options().fallback_to_usage().run();
 
-    let _lock_file = match lock_or_connect(&options)? {
-        LockResult::LaunchRequested => {
+    let (_lock_file, command, command_args, env) = match launch_or_lock(
+        options.server_port,
+        options.command,
+        options.command_args,
+        options.env,
+    )? {
+        LaunchResult::LaunchRequested => {
             // There was a krun instance already running and we've requested it
             // to launch the command successfully, so all the work is done.
             return Ok(());
         },
-        LockResult::LockAcquired(lock_file) => lock_file,
+        LaunchResult::LockAcquired {
+            lock_file,
+            command,
+            command_args,
+            env,
+        } => (lock_file, command, command_args, env),
     };
 
     {
@@ -78,7 +82,7 @@ fn main() -> Result<()> {
         } else {
             get_performance_cores()
                 .inspect_err(|err| {
-                    debug!(err:?; "Failed to get CPU performance cores");
+                    debug!(err:?; "get_performance_cores error");
                 })
                 .or_else(|_err| get_fallback_cores())?
         };
@@ -221,11 +225,15 @@ fn main() -> Result<()> {
 
     krun_guest_args.push(krun_server_path);
     krun_guest_args.push(
-        CString::new(options.command)
-            .context("Failed to process command as it contains NUL character")?,
+        CString::new(
+            command
+                .to_str()
+                .context("Failed to process command as it contains invalid UTF-8")?,
+        )
+        .context("Failed to process command as it contains NUL character")?,
     );
-    let command_argc = options.command_args.len();
-    for arg in options.command_args {
+    let command_argc = command_args.len();
+    for arg in command_args {
         let s = CString::new(arg)
             .context("Failed to process command arg as it contains NUL character")?;
         krun_guest_args.push(s);
@@ -243,79 +251,21 @@ fn main() -> Result<()> {
         vec
     };
 
-    let mut env: Vec<CString> = vec![];
-
-    // Automatically pass these environment variables to the microVM, if they are set.
-    const WELL_KNOWN_ENV_VARS: [&str; 5] = [
-        "LD_LIBRARY_PATH",
-        "LIBGL_DRIVERS_PATH",
-        "MESA_LOADER_DRIVER_OVERRIDE", // needed for asahi
-        "PATH",                        // needed by `krun-guest` program
-        "RUST_LOG",
-    ];
-
-    // https://github.com/AsahiLinux/docs/wiki/Devices
-    const ASAHI_SOC_COMPAT_IDS: [&str; 12] = [
-        "apple,t8103",
-        "apple,t6000",
-        "apple,t6001",
-        "apple,t6002",
-        "apple,t8112",
-        "apple,t6020",
-        "apple,t6021",
-        "apple,t6022",
-        "apple,t8122",
-        "apple,t6030",
-        "apple,t6031",
-        "apple,t6034",
-    ];
-    for key in WELL_KNOWN_ENV_VARS {
-        let value = match env::var(key) {
-            Ok(value) => value,
-            Err(VarError::NotPresent) => {
-                if key == "MESA_LOADER_DRIVER_OVERRIDE" {
-                    match fs::read_to_string("/proc/device-tree/compatible") {
-                        Ok(compatibles) => {
-                            for compatible in compatibles.split('\0') {
-                                if ASAHI_SOC_COMPAT_IDS.iter().any(|&s| s == compatible) {
-                                    env.push(c"MESA_LOADER_DRIVER_OVERRIDE=asahi".to_owned());
-                                    break;
-                                }
-                            }
-                        },
-                        Err(err) if err.kind() == ErrorKind::NotFound => {
-                            continue;
-                        },
-                        Err(err) => {
-                            Err(err).context("Failed to read `/proc/device-tree/compatible`")?
-                        },
-                    }
-                }
-                continue;
-            },
-            Err(err) => Err(err).with_context(|| format!("Failed to get `{key}` env var"))?,
-        };
-        let s = CString::new(format!("{key}={value}")).with_context(|| {
-            format!("Failed to process `{key}` env var as it contains NUL character")
-        })?;
-        env.push(s);
-    }
-
-    for (key, value) in options.env {
-        let value = value.map_or_else(
-            || env::var(&key).with_context(|| format!("Failed to get `{key}` env var")),
-            Ok,
-        )?;
-        let s = CString::new(format!("{key}={value}")).with_context(|| {
-            format!("Failed to process `{key}` env var as it contains NUL character")
-        })?;
-        env.push(s);
-    }
-
-    env.push(CString::new(format!("KRUN_SERVER_PORT={}", options.server_port)).unwrap());
-
-    debug!(env:?; "env vars");
-
+    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+    env.insert(
+        "KRUN_SERVER_PORT".to_owned(),
+        options.server_port.to_string(),
+    );
+    let env: Vec<CString> = {
+        let mut vec = Vec::with_capacity(env.len());
+        for (key, value) in env {
+            let s = CString::new(format!("{key}={value}")).with_context(|| {
+                format!("Failed to process `{key}` env var as it contains NUL character")
+            })?;
+            vec.push(s);
+        }
+        vec
+    };
     let env: Vec<*const c_char> = {
         // SAFETY: All pointers must be stored in the same allocation.
         // See https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html#safety
@@ -328,14 +278,15 @@ fn main() -> Result<()> {
     };
 
     {
-        // Specify the path of the binary to be executed in the isolated context, relative to
-        // the root path.
+        // Specify the path of the binary to be executed in the isolated context,
+        // relative to the root path.
         //
         // SAFETY:
         // * `krun_guest_path` is a pointer to a `CString` with long enough lifetime.
-        // * `krun_guest_args` is a pointer to a `Vec` of pointers to `CString`s all with long
+        // * `krun_guest_args` is a pointer to a `Vec` of pointers to `CString`s all
+        //   with long enough lifetime.
+        // * `env` is a pointer to a `Vec` of pointers to `CString`s all with long
         //   enough lifetime.
-        // * `env` is a pointer to a `Vec` of pointers to `CString`s all with long enough lifetime.
         let err = unsafe {
             krun_set_exec(
                 ctx_id,
@@ -352,8 +303,8 @@ fn main() -> Result<()> {
     }
 
     {
-        // Start and enter the microVM. Unless there is some error while creating the microVM
-        // this function never returns.
+        // Start and enter the microVM. Unless there is some error while creating the
+        // microVM this function never returns.
         //
         // SAFETY: Safe as no pointers involved.
         let err = unsafe { krun_start_enter(ctx_id) };
