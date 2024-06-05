@@ -12,7 +12,7 @@ fn main() -> Result<()> {
 
     let options = options().run();
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", &options.server_port))?;
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", &options.server_port))?;
     let listener_fd = listener.as_raw_fd();
 
     let server_thread = start_server(listener);
