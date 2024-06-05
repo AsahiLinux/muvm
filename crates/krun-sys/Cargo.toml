@@ -1,6 +1,6 @@
 [package]
 name = "krun-sys"
-version = "1.9.0"
+version = "1.9.1"
 edition = { workspace = true }
 rust-version = { workspace = true }
 repository = "https://github.com/containers/libkrun"

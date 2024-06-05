@@ -1,4 +1,5 @@
-use std::{ops::Range, path::PathBuf};
+use std::ops::Range;
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
 use bpaf::{any, construct, long, positional, OptionParser, Parser};
@@ -12,7 +13,7 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
-    pub command: String,
+    pub command: PathBuf,
     pub command_args: Vec<String>,
 }
 
@@ -31,8 +32,8 @@ pub fn options() -> OptionParser<Options> {
             s.split(',')
                 .map(|s| s.split_once('-').unwrap_or((s, s)))
                 .map(|(start, end)| {
-                    let start = start.parse::<u16>().context("")?;
-                    let end = end.parse::<u16>().context("")?;
+                    let start = start.parse::<u16>().context("Failed to parse start")?;
+                    let end = end.parse::<u16>().context("Failed to parse end")?;
                     Ok::<_, anyhow::Error>(start..(end + 1))
                 })
                 .collect::<Result<Vec<_>, _>>()

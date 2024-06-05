@@ -1,51 +1,63 @@
-use std::{
-    collections::HashMap,
-    env,
-    fs::File,
-    io::{BufRead, BufReader, Read, Write},
-    net::TcpStream,
-    path::Path,
-};
+use std::collections::HashMap;
+use std::env;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use rustix::{
-    fs::{flock, FlockOperation},
-    path::Arg,
-};
-use serde_json;
+use rustix::fs::{flock, FlockOperation};
+use rustix::path::Arg;
 use utils::launch::Launch;
 
-use crate::cli_options::Options;
+use crate::env::prepare_env_vars;
 
-pub enum LockResult {
+pub enum LaunchResult {
     LaunchRequested,
-    LockAcquired(File),
+    LockAcquired {
+        lock_file: File,
+        command: PathBuf,
+        command_args: Vec<String>,
+        env: Vec<(String, Option<String>)>,
+    },
 }
 
-pub fn lock_or_connect(options: &Options) -> Result<LockResult> {
+pub fn launch_or_lock(
+    server_port: u32,
+    command: PathBuf,
+    command_args: Vec<String>,
+    env: Vec<(String, Option<String>)>,
+) -> Result<LaunchResult> {
     let running_server_port = env::var("KRUN_SERVER_PORT").ok();
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
-        request_launch(port, &options.command, &options.command_args, &options.env)?;
-        return Ok(LockResult::LaunchRequested);
+        let env = prepare_env_vars(env)?;
+        request_launch(port, command, command_args, env)?;
+        return Ok(LaunchResult::LaunchRequested);
     }
 
-    let (lock_file, running_server_port) = lock_file(options.server_port)?;
+    let (lock_file, running_server_port) = lock_file(server_port)?;
     match lock_file {
-        Some(lock_file) => Ok(LockResult::LockAcquired(lock_file)),
+        Some(lock_file) => Ok(LaunchResult::LockAcquired {
+            lock_file,
+            command,
+            command_args,
+            env,
+        }),
         None => {
             if let Some(port) = running_server_port {
+                let env = prepare_env_vars(env)?;
                 let mut tries = 0;
-                while let Err(e) =
-                    request_launch(port, &options.command, &options.command_args, &options.env)
+                while let Err(err) =
+                    request_launch(port, command.clone(), command_args.clone(), env.clone())
                 {
                     if tries == 3 {
-                        return Err(e);
+                        return Err(err);
                     } else {
                         tries += 1;
                     }
                 }
-                Ok(LockResult::LaunchRequested)
+                Ok(LaunchResult::LaunchRequested)
             } else {
                 Err(anyhow!(
                     "krun is already running but couldn't find its server port, bailing out"
@@ -61,16 +73,16 @@ fn lock_file(server_port: u32) -> Result<(Option<File>, Option<u32>)> {
     let lock_path = Path::new(&run_path).join("krun.lock");
 
     let mut lock_file = if !lock_path.exists() {
-        let lock_file = File::create(lock_path).context("Can't create lock file")?;
+        let lock_file = File::create(lock_path).context("Failed to create lock file")?;
         flock(&lock_file, FlockOperation::NonBlockingLockExclusive)
-            .context("Can't acquire an exclusive lock on new lock file")?;
+            .context("Failed to acquire exclusive lock on new lock file")?;
         lock_file
     } else {
         let mut lock_file = File::options()
             .write(true)
             .read(true)
             .open(lock_path)
-            .context("Can't create lock file")?;
+            .context("Failed to create lock file")?;
         let ret = flock(&lock_file, FlockOperation::NonBlockingLockExclusive);
         if ret.is_err() {
             let mut data: Vec<u8> = Vec::with_capacity(5);
@@ -91,29 +103,22 @@ fn lock_file(server_port: u32) -> Result<(Option<File>, Option<u32>)> {
     };
 
     lock_file.set_len(0)?;
-    lock_file.write_all(format!("{}", server_port).as_bytes())?;
+    lock_file.write_all(format!("{server_port}").as_bytes())?;
     Ok((Some(lock_file), None))
 }
 
 fn request_launch(
-    port: u32,
-    command: &String,
-    args: &[String],
-    envs: &Vec<(String, Option<String>)>,
+    server_port: u32,
+    command: PathBuf,
+    command_args: Vec<String>,
+    env: HashMap<String, String>,
 ) -> Result<()> {
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))?;
-
-    let mut envs_map: HashMap<String, String> = HashMap::new();
-    for (k, v) in envs {
-        if let Some(v) = v {
-            envs_map.insert(k.to_string(), v.to_string());
-        }
-    }
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{server_port}"))?;
 
     let launch = Launch {
-        command: command.to_string(),
-        args: args.to_vec(),
-        envs: envs_map,
+        command,
+        command_args,
+        env,
     };
 
     stream.write_all(serde_json::to_string(&launch)?.as_bytes())?;
@@ -127,6 +132,6 @@ fn request_launch(
     if resp == "OK" {
         Ok(())
     } else {
-        Err(anyhow!("Error requesting launch to server: {resp}"))
+        Err(anyhow!("could not request launch to server: {resp}"))
     }
 }

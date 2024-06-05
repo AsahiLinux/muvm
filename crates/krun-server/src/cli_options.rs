@@ -1,9 +1,11 @@
+use std::path::PathBuf;
+
 use bpaf::{any, construct, env, positional, OptionParser, Parser};
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub server_port: u32,
-    pub command: String,
+    pub command: PathBuf,
     pub command_args: Vec<String>,
 }
 
@@ -12,7 +14,7 @@ pub fn options() -> OptionParser<Options> {
         .short('p')
         .help("TCP port to listen for command launch requests")
         .argument("SERVER_PORT")
-        .fallback(3333)
+        .fallback(3334)
         .display_fallback();
     let command = positional("COMMAND");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {

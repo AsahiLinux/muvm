@@ -1,4 +1,6 @@
-use std::{fs, os::unix::process::ExitStatusExt, process::Command};
+use std::fs;
+use std::os::unix::process::ExitStatusExt;
+use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;

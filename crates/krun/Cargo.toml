@@ -16,8 +16,8 @@ krun-sys = { workspace = true, features = [] }
 log = { workspace = true, features = ["kv"] }
 nix = { workspace = true, features = ["user"] }
 rustix = { workspace = true, features = ["process", "std", "use-libc-auxv"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde = { workspace = true, features = [] }
+serde_json = { workspace = true, features = ["std"] }
 utils = { workspace = true, features = [] }
 
 [features]
