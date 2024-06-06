@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -74,6 +74,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let err = Command::new(&command)
         .args(command_args)
         .envs(envs)
+        .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr)
         .spawn();
