@@ -92,7 +92,7 @@ fn main() -> Result<()> {
         } else {
             let sysinfo = sysinfo().context("Failed to get system information")?;
             let ram_total = sysinfo.ram_total() / 1024 / 1024;
-            cmp::min(MiB::from((ram_total as f64 * 0.8) as u32), MiB::from(16384))
+            cmp::min(MiB::from((ram_total as f64 * 0.8) as u32), MiB::from(32768))
         };
         // Bind the microVM to the specified CPU cores.
         let mut cpuset = CpuSet::new();
