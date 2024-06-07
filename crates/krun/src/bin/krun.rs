@@ -103,7 +103,7 @@ fn main() -> Result<()> {
         }
         debug!(cpuset:?; "sched_setaffinity");
         sched_setaffinity(None, &cpuset).context("Failed to set CPU affinity")?;
-        // Configure the number of vCPUs and the amount of RAM (max 16384 MiB).
+        // Configure the number of vCPUs and the amount of RAM.
         //
         // SAFETY: Safe as no pointers involved.
         debug!(num_vcpus, ram_mib = u32::from(ram_mib); "krun_set_vm_config");

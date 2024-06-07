@@ -65,10 +65,6 @@ pub fn options() -> OptionParser<Options> {
     [default: 80% of total RAM]",
         )
         .argument("MEM")
-        .guard(
-            |&mem| mem <= MiB::from(16384),
-            "the maximum amount of RAM supported is 16384 MiB",
-        )
         .optional();
     let passt_socket = long("passt-socket")
         .help("Instead of starting passt, connect to passt socket at PATH")
