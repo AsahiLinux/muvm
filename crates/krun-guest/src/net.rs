@@ -1,5 +1,5 @@
 use std::fs;
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::ExitStatusExt as _;
 use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};

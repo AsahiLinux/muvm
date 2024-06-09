@@ -1,6 +1,6 @@
 edition = "2021"
 
-# empty_item_single_line = false
+# empty_item_single_line = true
 # error_on_line_overflow = true
 # format_code_in_doc_comments = true
 # format_strings = true
