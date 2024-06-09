@@ -13,9 +13,10 @@ anyhow = { workspace = true, features = ["std"] }
 bpaf = { workspace = true, features = [] }
 env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
 log = { workspace = true, features = ["kv"] }
-nix = { workspace = true, features = ["socket"] }
 serde = { workspace = true, features = [] }
 serde_json = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync"] }
+tokio-stream = { workspace = true, features = ["net", "sync"] }
 utils = { workspace = true, features = [] }
 
 [features]

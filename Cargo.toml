@@ -23,4 +23,6 @@ rustix = { version = "0.38.34", default-features = false }
 serde = { version = "1.0.203", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
 tempfile = { version = "3.10.1", default-features = false }
+tokio = { version = "1.38.0", default-features = false }
+tokio-stream = { version = "0.1.15", default-features = false }
 utils = { path = "crates/utils", default-features = false }
