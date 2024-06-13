@@ -2,7 +2,7 @@ use std::os::unix::process::ExitStatusExt as _;
 
 use anyhow::Result;
 use krun_server::cli_options::options;
-use krun_server::server::{start_server, State};
+use krun_server::server::{Server, State};
 use log::error;
 use tokio::net::TcpListener;
 use tokio::process::Command;
@@ -17,13 +17,12 @@ async fn main() -> Result<()> {
     let options = options().run();
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", options.server_port)).await?;
-    let (state_tx, state_rx) = watch::channel(State {
-        connection_idle: true,
-        child_processes: 0,
-    });
+    let (state_tx, state_rx) = watch::channel(State::new());
 
-    let server_handle = tokio::spawn(start_server(listener, state_tx));
-    tokio::pin!(server_handle);
+    let mut server_handle = tokio::spawn(async move {
+        let mut server = Server::new(listener, state_tx);
+        server.run().await;
+    });
     let command_status = Command::new(&options.command)
         .args(options.command_args)
         .status();
@@ -77,7 +76,7 @@ async fn main() -> Result<()> {
                 command_exited = true;
             },
             Some(state) = state_rx.next(), if command_exited => {
-                if state.connection_idle && state.child_processes == 0 {
+                if state.connection_idle() && state.child_processes() == 0 {
                     // Server is idle (not currently handling an accepted
                     // incoming connection) and no more child processes.
                     // We're done.
@@ -85,7 +84,7 @@ async fn main() -> Result<()> {
                 }
                 println!(
                     "Waiting for {} other commands launched through this krun server to exit...",
-                    state.child_processes
+                    state.child_processes()
                 );
                 println!("Press Ctrl+C to force quit");
             },
