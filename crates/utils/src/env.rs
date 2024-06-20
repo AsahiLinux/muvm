@@ -1,8 +1,9 @@
-use std::os::unix::fs::PermissionsExt as _;
+use std::env;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
+
+use crate::fs::find_executable;
 
 pub fn find_in_path<P>(program: P) -> Result<Option<PathBuf>>
 where
@@ -21,16 +22,11 @@ where
     };
 
     for search_path in env::split_paths(&path_env) {
-        let pb = search_path.join(program);
-        if !pb.is_file() {
-            continue;
-        }
-        let Ok(metadata) = fs::metadata(&pb) else {
-            continue;
-        };
-        if metadata.permissions().mode() & 0o111 != 0 {
-            let pb = pb.canonicalize().context("Failed to canonicalize path")?;
-            return Ok(Some(pb));
+        let path = search_path.join(program);
+        if let Some(path) = find_executable(&path)
+            .with_context(|| format!("Failed to check existence of {path:?}"))?
+        {
+            return Ok(Some(path));
         }
     }
 
