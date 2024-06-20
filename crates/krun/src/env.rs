@@ -11,12 +11,14 @@ use utils::env::find_in_path;
 
 /// Automatically pass these environment variables to the microVM, if they are
 /// set.
-const WELL_KNOWN_ENV_VARS: [&str; 5] = [
+const WELL_KNOWN_ENV_VARS: [&str; 7] = [
     "LD_LIBRARY_PATH",
     "LIBGL_DRIVERS_PATH",
     "MESA_LOADER_DRIVER_OVERRIDE", // needed for asahi
     "PATH",                        // needed by `krun-guest` program
     "RUST_LOG",
+    "OPENGL_DRIVER",               // needed for OpenGL on NixOS
+    "NIXOS_CURRENT_SYSTEM",        // needed for some paths to work on NixOS
 ];
 
 /// See https://github.com/AsahiLinux/docs/wiki/Devices

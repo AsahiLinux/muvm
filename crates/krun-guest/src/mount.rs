@@ -1,9 +1,10 @@
-use std::fs::File;
+use std::fs::{File, create_dir_all};
+use std::env::var_os;
 use std::os::fd::AsFd;
 
 use anyhow::{Context, Result};
 use rustix::fs::CWD;
-use rustix::mount::{mount2, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags};
+use rustix::mount::{mount2, move_mount, mount_recursive_bind, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags};
 
 pub fn mount_filesystems() -> Result<()> {
     mount2(
@@ -38,6 +39,26 @@ pub fn mount_filesystems() -> Result<()> {
             MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
         )
         .context("Failed to move_mount `/etc/resolv.conf`")?;
+    }
+
+    let opengl_driver = var_os("OPENGL_DRIVER");
+    if let Some(dir) = opengl_driver {
+        create_dir_all("/run/opengl-driver")?;
+        mount_recursive_bind(
+            dir,
+            "/run/opengl-driver",
+        )
+        .context("Failed to mount `/run/opengl-driver`")?;
+    }
+
+    let nixos_curr_sys = var_os("NIXOS_CURRENT_SYSTEM");
+    if let Some(dir) = nixos_curr_sys {
+        create_dir_all("/run/current-system")?;
+        mount_recursive_bind(
+            dir,
+            "/run/current-system",
+        )
+        .context("Failed to mount `/run/current-system`")?;
     }
 
     mount2(
