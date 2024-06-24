@@ -12,10 +12,9 @@ license = { workspace = true }
 anyhow = { workspace = true, features = ["std"] }
 bpaf = { workspace = true, features = [] }
 env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
+krun-launch = { workspace = true, features = [] }
 log = { workspace = true, features = ["kv"] }
-serde = { workspace = true, features = [] }
-serde_json = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync"] }
+tokio = { workspace = true, features = ["macros", "net", "process", "rt-multi-thread", "sync"] }
 tokio-stream = { workspace = true, features = ["net", "sync"] }
 utils = { workspace = true, features = [] }
 

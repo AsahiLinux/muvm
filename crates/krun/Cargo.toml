@@ -12,6 +12,7 @@ license = { workspace = true }
 anyhow = { workspace = true, features = ["std"] }
 bpaf = { workspace = true, features = [] }
 env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
+krun-launch = { workspace = true, features = [] }
 krun-sys = { workspace = true, features = [] }
 log = { workspace = true, features = ["kv"] }
 nix = { workspace = true, features = ["user"] }

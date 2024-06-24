@@ -4,16 +4,16 @@ use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::{env, io};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
+use krun_launch::request::Request;
+use krun_launch::response::Response;
 use log::{debug, error};
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command};
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt as _;
-use utils::launch::Launch;
 use utils::stdio::make_stdout_stderr;
 
 #[derive(Debug)]
@@ -53,9 +53,9 @@ impl Server {
                             continue;
                         },
                     };
-                    let stream = BufStream::new(stream);
+                    let server = krun_launch::Server::new(stream);
 
-                    match handle_connection(stream).await {
+                    match handle_connection(server).await {
                         Ok((command, mut child)) => {
                             self.child_set.spawn(async move { (command, child.wait().await) });
                             self.set_child_processes(self.child_set.len());
@@ -144,27 +144,17 @@ impl Default for State {
     }
 }
 
-async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
-    let mut buf = String::new();
-    loop {
-        if stream.read_line(&mut buf).await? == 0 {
-            return Err(anyhow!("unexpected EOF"));
-        }
-        if buf.contains("EOM") {
-            let launch: Launch = serde_json::from_str(&buf[..buf.len() - 5])?;
-            return Ok(launch);
-        }
-    }
-}
-
-async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf, Child)> {
+async fn handle_connection(mut server: krun_launch::Server<TcpStream>) -> Result<(PathBuf, Child)> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
-    let Launch {
+    let Request {
         command,
         command_args,
         env,
-    } = read_request(&mut stream).await?;
+    } = server
+        .read_request()
+        .await
+        .context("Failed to read request")?;
     debug!(command:?, command_args:?, env:?; "received launch request");
     envs.extend(env);
 
@@ -178,13 +168,17 @@ async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf,
         .stderr(stderr)
         .spawn()
         .with_context(|| format!("Failed to execute {command:?} as child process"));
-    if let Err(err) = &res {
-        let msg = format!("{err:?}");
-        stream.write_all(msg.as_bytes()).await.ok();
+    let response = if let Err(err) = &res {
+        Response::Err {
+            msg: format!("{err:?}"),
+        }
     } else {
-        stream.write_all(b"OK").await.ok();
-    }
-    stream.flush().await.ok();
+        Response::Ok
+    };
+    server
+        .write_response(response)
+        .await
+        .context("Failed to write response")?;
 
     res.map(|child| (command, child))
 }

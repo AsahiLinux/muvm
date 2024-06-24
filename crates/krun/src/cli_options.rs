@@ -12,7 +12,7 @@ pub struct Options {
     pub env: Vec<(String, Option<String>)>,
     pub mem: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
-    pub server_port: u32,
+    pub server_port: u16,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }

@@ -14,7 +14,7 @@ where
     Ok(UnixStream::connect(passt_socket_path)?)
 }
 
-pub fn start_passt(server_port: u32) -> Result<UnixStream> {
+pub fn start_passt(server_port: u16) -> Result<UnixStream> {
     // SAFETY: The child process should not inherit the file descriptor of
     // `parent_socket`. There is no documented guarantee of this, but the
     // implementation as of writing atomically sets `SOCK_CLOEXEC`.

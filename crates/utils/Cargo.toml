@@ -9,7 +9,6 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true, features = ["std"] }
-serde = { workspace = true, features = ["derive"] }
 
 [features]
 default = []

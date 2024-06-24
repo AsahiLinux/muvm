@@ -1,0 +1,22 @@
+[package]
+name = "krun-launch"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+description = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+bytes = { workspace = true, features = ["std"] }
+futures-util = { workspace = true, features = ["sink", "std"] }
+log = { workspace = true, features = ["kv"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["io-util"] }
+tokio-stream = { workspace = true, features = [] }
+tokio-util = { workspace = true, features = ["codec"] }
+
+[features]
+default = []
