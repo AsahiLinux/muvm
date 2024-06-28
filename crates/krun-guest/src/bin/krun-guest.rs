@@ -13,6 +13,7 @@ use krun_guest::user::setup_user;
 use krun_guest::x11::setup_x11_forwarding;
 use log::debug;
 use rustix::process::{getrlimit, setrlimit, Resource};
+use utils::env::find_in_path;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -37,10 +38,15 @@ fn main() -> Result<()> {
     if let Err(err) = mount_filesystems() {
         return Err(err).context("Failed to mount filesystems, bailing out");
     }
+    Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
 
     setup_fex()?;
 
     configure_network()?;
+
+    if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
+        Command::new(hidpipe_client_path).arg(format!("{}", options.uid)).spawn()?;
+    }
 
     let run_path = match setup_user(options.username, options.uid, options.gid) {
         Ok(p) => p,
