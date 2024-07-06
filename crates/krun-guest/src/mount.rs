@@ -3,7 +3,9 @@ use std::os::fd::AsFd;
 
 use anyhow::{Context, Result};
 use rustix::fs::CWD;
-use rustix::mount::{mount2, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags};
+use rustix::mount::{
+    mount2, mount_bind, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags,
+};
 
 pub fn mount_filesystems() -> Result<()> {
     mount2(
@@ -48,6 +50,11 @@ pub fn mount_filesystems() -> Result<()> {
         None,
     )
     .context("Failed to mount `binfmt_misc`")?;
+
+    // Expose the host filesystem (without any overlaid mounts) as /run/krun-host
+    let host_path = Path::new("/run/krun-host");
+    std::fs::create_dir_all(&host_path)?;
+    mount_bind("/", host_path).context("Failed to bind-mount / on /run/krun-host")?;
 
     Ok(())
 }
