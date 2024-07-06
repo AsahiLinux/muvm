@@ -15,6 +15,7 @@ license = "MIT"
 anyhow = { version = "1.0.82", default-features = false }
 bindgen = { version = "0.69.4", default-features = false }
 bpaf = { version = "0.9.11", default-features = false }
+byteorder = { version = "1.5.0", default-features = false }
 env_logger = { version = "0.11.3", default-features = false }
 krun-sys = { path = "crates/krun-sys", default-features = false }
 log = { version = "0.4.21", default-features = false }

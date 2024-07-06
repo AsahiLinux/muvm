@@ -78,6 +78,19 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
         env_map.insert(key, value);
     }
 
+    // If we have an X11 display in the host, set HOST_DISPLAY in the guest.
+    // krun-guest will then use this to set up xauth and replace it with :1
+    // (which is forwarded to the host display).
+    if let Ok(display) = env::var("DISPLAY") {
+        env_map.insert("HOST_DISPLAY".to_string(), display);
+
+        // And forward XAUTHORITY. This will be modified to fix the
+        // display name in krun-guest.
+        if let Ok(xauthority) = env::var("XAUTHORITY") {
+            env_map.insert("XAUTHORITY".to_string(), xauthority);
+        }
+    }
+
     debug!(env:? = env_map; "env vars");
 
     Ok(env_map)

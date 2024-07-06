@@ -10,6 +10,7 @@ use krun_guest::net::configure_network;
 use krun_guest::socket::setup_socket_proxy;
 use krun_guest::sommelier::exec_sommelier;
 use krun_guest::user::setup_user;
+use krun_guest::x11::setup_x11_forwarding;
 use log::debug;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
@@ -51,6 +52,8 @@ fn main() -> Result<()> {
         .context("Failed to create `pulse` directory in `XDG_RUNTIME_DIR`")?;
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, 3333)?;
+
+    setup_x11_forwarding(run_path)?;
 
     // Will not return if successful.
     exec_sommelier(&options.command, &options.command_args)
