@@ -17,6 +17,7 @@ pub struct Options {
     pub server_port: u32,
     pub fex_images: Vec<String>,
     pub direct_x11: bool,
+    pub interactive: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -116,7 +117,10 @@ pub fn options() -> OptionParser<Options> {
             "--direct-x11 requires the `x11bridge` crate feature",
         )
         .hide();
-
+    let interactive = long("interactive")
+        .short('i')
+        .help("Allocate a tty guest-side and connect it to the current stdin/out")
+        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -134,6 +138,7 @@ pub fn options() -> OptionParser<Options> {
         server_port,
         fex_images,
         direct_x11,
+        interactive,
         // positionals
         command,
         command_args,
