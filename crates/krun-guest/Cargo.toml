@@ -11,6 +11,7 @@ license = { workspace = true }
 [dependencies]
 anyhow = { workspace = true, features = ["std"] }
 bpaf = { workspace = true, features = [] }
+byteorder = { workspace = true, features = ["std"] }
 env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
 log = { workspace = true, features = ["kv"] }
 nix = { workspace = true, features = ["user"] }

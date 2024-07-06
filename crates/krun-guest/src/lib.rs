@@ -5,3 +5,4 @@ pub mod net;
 pub mod socket;
 pub mod sommelier;
 pub mod user;
+pub mod x11;
