@@ -7,7 +7,7 @@ use krun_guest::cli_options::options;
 use krun_guest::fex::setup_fex;
 use krun_guest::mount::mount_filesystems;
 use krun_guest::net::configure_network;
-use krun_guest::pulse::setup_pulse_proxy;
+use krun_guest::socket::setup_socket_proxy;
 use krun_guest::sommelier::exec_sommelier;
 use krun_guest::user::setup_user;
 use log::debug;
@@ -46,7 +46,11 @@ fn main() -> Result<()> {
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
     };
 
-    setup_pulse_proxy(run_path)?;
+    let pulse_path = run_path.join("pulse");
+    std::fs::create_dir(&pulse_path)
+        .context("Failed to create `pulse` directory in `XDG_RUNTIME_DIR`")?;
+    let pulse_path = pulse_path.join("native");
+    setup_socket_proxy(pulse_path, 3333)?;
 
     // Will not return if successful.
     exec_sommelier(&options.command, &options.command_args)

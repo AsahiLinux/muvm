@@ -1,13 +1,13 @@
 use std::collections::HashMap;
+use std::env;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::{env, fs};
 
 use anyhow::{Context, Result};
 use utils::env::find_in_path;
 use utils::stdio::make_stdout_stderr;
 
-pub fn setup_pulse_proxy<P>(run_path: P) -> Result<()>
+pub fn setup_socket_proxy<P>(socket_path: P, port: u16) -> Result<()>
 where
     P: AsRef<Path>,
 {
@@ -19,19 +19,15 @@ where
     let envs: HashMap<String, String> = env::vars().collect();
     let (stdout, stderr) = make_stdout_stderr(&socat_path, &envs)?;
 
-    let run_path = run_path.as_ref();
-    let pulse_path = run_path.join("pulse");
-    fs::create_dir(&pulse_path)
-        .context("Failed to create `pulse` directory in `XDG_RUNTIME_DIR`")?;
-    let pulse_path = pulse_path.join("native");
     Command::new(socat_path)
         .arg(format!(
             "UNIX-LISTEN:{},fork",
-            pulse_path
+            socket_path
+                .as_ref()
                 .to_str()
                 .expect("pulse_path should not contain invalid UTF-8")
         ))
-        .arg("VSOCK-CONNECT:2:3333")
+        .arg(format!("VSOCK-CONNECT:2:{}", port))
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr)
