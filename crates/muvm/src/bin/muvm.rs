@@ -16,7 +16,7 @@ use muvm::cli_options::options;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::hidpipe_server::spawn_hidpipe_server;
-use muvm::launch::{launch_or_lock, LaunchResult};
+use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
@@ -74,6 +74,7 @@ fn main() -> Result<()> {
         options.command,
         options.command_args,
         options.env,
+        options.interactive,
     )? {
         LaunchResult::LaunchRequested => {
             // There was a muvm instance already running and we've requested it
@@ -317,7 +318,7 @@ fn main() -> Result<()> {
         let socket_dir = Path::new(&run_path).join("krun/socket");
         std::fs::create_dir_all(&socket_dir)?;
         // Dynamic ports: Applications may listen on these sockets as neeeded.
-        for port in 50000..50200 {
+        for port in DYNAMIC_PORT_RANGE {
             let socket_path = socket_dir.join(format!("port-{}", port));
             let socket_path = CString::new(
                 socket_path
