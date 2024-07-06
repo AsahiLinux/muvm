@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use krun::cli_options::options;
 use krun::cpu::{get_fallback_cores, get_performance_cores};
 use krun::env::{find_krun_exec, prepare_env_vars};
-use krun::launch::{launch_or_lock, LaunchResult};
+use krun::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
@@ -39,6 +39,7 @@ fn main() -> Result<()> {
         options.command,
         options.command_args,
         options.env,
+        options.interactive,
     )? {
         LaunchResult::LaunchRequested => {
             // There was a krun instance already running and we've requested it
@@ -199,7 +200,7 @@ fn main() -> Result<()> {
         let socket_dir = Path::new(&run_path).join("krun/socket");
         std::fs::create_dir_all(&socket_dir)?;
         // Dynamic ports: Applications may listen on these sockets as neeeded.
-        for port in 50000..50200 {
+        for port in DYNAMIC_PORT_RANGE {
             let socket_path = socket_dir.join(format!("port-{}", port));
             let socket_path = CString::new(
                 socket_path
