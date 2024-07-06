@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::os::fd::AsFd;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use rustix::fs::CWD;
@@ -55,6 +56,18 @@ pub fn mount_filesystems() -> Result<()> {
     let host_path = Path::new("/run/krun-host");
     std::fs::create_dir_all(&host_path)?;
     mount_bind("/", host_path).context("Failed to bind-mount / on /run/krun-host")?;
+
+    if Path::new("/tmp/.X11-unix").exists() {
+        // Mount a tmpfs for X11 sockets, so the guest doesn't clobber host X server sockets
+        mount2(
+            Some("tmpfs"),
+            "/tmp/.X11-unix",
+            Some("tmpfs"),
+            MountFlags::NOEXEC | MountFlags::NOSUID | MountFlags::RELATIME,
+            None,
+        )
+        .context("Failed to mount `/tmp/.X11-unix`")?;
+    }
 
     Ok(())
 }
