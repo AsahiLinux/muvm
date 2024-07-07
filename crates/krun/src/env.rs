@@ -20,20 +20,7 @@ const WELL_KNOWN_ENV_VARS: [&str; 5] = [
 ];
 
 /// See https://github.com/AsahiLinux/docs/wiki/Devices
-const ASAHI_SOC_COMPAT_IDS: [&str; 12] = [
-    "apple,t8103",
-    "apple,t6000",
-    "apple,t6001",
-    "apple,t6002",
-    "apple,t8112",
-    "apple,t6020",
-    "apple,t6021",
-    "apple,t6022",
-    "apple,t8122",
-    "apple,t6030",
-    "apple,t6031",
-    "apple,t6034",
-];
+const ASAHI_SOC_COMPAT_IDS: [&str; 1] = ["apple,arm-platform"];
 
 pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<String, String>> {
     let mut env_map = HashMap::new();
