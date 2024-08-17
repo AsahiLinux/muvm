@@ -1,11 +1,12 @@
-use crate::socket::setup_socket_proxy;
-
-use anyhow::{anyhow, Context, Result};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+
+use anyhow::{anyhow, Context, Result};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
+use crate::socket::setup_socket_proxy;
 
 pub fn setup_x11_forwarding<P>(run_path: P) -> Result<()>
 where
@@ -70,13 +71,13 @@ where
 
             wtr.write_u16::<BigEndian>(family)?;
             wtr.write_u16::<BigEndian>(addr.len().try_into()?)?;
-            wtr.write(&addr)?;
+            wtr.write_all(&addr)?;
             wtr.write_u16::<BigEndian>(display.len().try_into()?)?;
-            wtr.write(display)?;
+            wtr.write_all(display)?;
             wtr.write_u16::<BigEndian>(name.len().try_into()?)?;
-            wtr.write(&name)?;
+            wtr.write_all(&name)?;
             wtr.write_u16::<BigEndian>(data.len().try_into()?)?;
-            wtr.write(&data)?;
+            wtr.write_all(&data)?;
 
             break;
         }
