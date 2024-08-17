@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 anyhow = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive"] }
+uuid = { workspace = true, features = ["std", "v7"] }
 
 [features]
 default = []

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use std::process::Stdio;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use uuid::Uuid;
 
 pub fn make_stdout_stderr<P>(command: P, envs: &HashMap<String, String>) -> Result<(Stdio, Stdio)>
 where
@@ -22,9 +22,9 @@ where
     } else {
         Path::new("/tmp")
     };
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-    let path_stdout = base.join(format!("krun-{filename}-{ts}.stdout"));
-    let path_stderr = base.join(format!("krun-{filename}-{ts}.stderr"));
+    let uuid = Uuid::now_v7();
+    let path_stdout = base.join(format!("krun-{filename}-{uuid}.stdout"));
+    let path_stderr = base.join(format!("krun-{filename}-{uuid}.stderr"));
     Ok((
         File::create_new(path_stdout)?.into(),
         File::create_new(path_stderr)?.into(),

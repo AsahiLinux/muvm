@@ -27,3 +27,4 @@ tempfile = { version = "3.10.1", default-features = false }
 tokio = { version = "1.38.0", default-features = false }
 tokio-stream = { version = "0.1.15", default-features = false }
 utils = { path = "crates/utils", default-features = false }
+uuid = { version = "1.10.0", default-features = false }

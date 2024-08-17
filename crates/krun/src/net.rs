@@ -25,7 +25,8 @@ pub fn start_passt(server_port: u32) -> Result<UnixStream> {
 
     // SAFETY: The parent process should not keep the file descriptor of
     // `child_socket` open. It is a `UnixStream` so the file descriptor will be
-    // closed on drop. See https://doc.rust-lang.org/std/io/index.html#io-safety
+    // closed on drop.
+    // See https://doc.rust-lang.org/std/io/index.html#io-safety
     //
     // The `dup` call clears the `FD_CLOEXEC` flag on the new `child_fd`, which
     // should be inherited by the child process.

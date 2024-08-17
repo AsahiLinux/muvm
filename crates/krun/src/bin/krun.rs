@@ -183,8 +183,8 @@ fn main() -> Result<()> {
 
     // Forward the native X11 display into the guest as a socket
     if let Ok(x11_display) = env::var("DISPLAY") {
-        if x11_display.starts_with(":") {
-            let socket_path = Path::new("/tmp/.X11-unix/").join(format!("X{}", &x11_display[1..]));
+        if let Some(x11_display) = x11_display.strip_prefix(":") {
+            let socket_path = Path::new("/tmp/.X11-unix/").join(format!("X{}", x11_display));
             if socket_path.exists() {
                 let socket_path = CString::new(
                     socket_path
