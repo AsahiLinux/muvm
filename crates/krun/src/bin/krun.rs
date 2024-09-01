@@ -39,7 +39,6 @@ fn main() -> Result<()> {
         options.command,
         options.command_args,
         options.env,
-        options.interactive,
     )? {
         LaunchResult::LaunchRequested => {
             // There was a krun instance already running and we've requested it

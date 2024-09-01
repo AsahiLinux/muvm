@@ -13,7 +13,6 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
-    pub interactive: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -81,10 +80,6 @@ pub fn options() -> OptionParser<Options> {
         .argument("SERVER_PORT")
         .fallback(3334)
         .display_fallback();
-    let interactive = long("interactive")
-        .short('i')
-        .help("Allocate a tty guest-side and connect it to the current stdin/out")
-        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -98,7 +93,6 @@ pub fn options() -> OptionParser<Options> {
         mem,
         passt_socket,
         server_port,
-        interactive,
         // positionals
         command,
         command_args,

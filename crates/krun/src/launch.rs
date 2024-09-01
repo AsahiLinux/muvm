@@ -94,11 +94,7 @@ fn wrapped_launch(
     mut command_args: Vec<String>,
     env: HashMap<String, String>,
     cwd: PathBuf,
-    interactive: bool,
 ) -> Result<()> {
-    if !interactive {
-        return request_launch(server_port, command, command_args, env, cwd);
-    }
     let (mut socat, vsock_port) = start_socat()?;
     command_args.insert(0, command.to_string_lossy().into_owned());
     command_args = vec![
@@ -119,14 +115,13 @@ pub fn launch_or_lock(
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
-    interactive: bool,
 ) -> Result<LaunchResult> {
     let running_server_port = env::var("KRUN_SERVER_PORT").ok();
     let cwd = env::current_dir()?;
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
         let env = prepare_env_vars(env)?;
-        if let Err(err) = wrapped_launch(port, command, command_args, env, cwd, interactive) {
+        if let Err(err) = wrapped_launch(port, command, command_args, env, cwd) {
             return Err(anyhow!("could not request launch to server: {err}"));
         }
         return Ok(LaunchResult::LaunchRequested);
@@ -151,7 +146,6 @@ pub fn launch_or_lock(
                         command_args.clone(),
                         env.clone(),
                         cwd.clone(),
-                        interactive,
                     ) {
                         Err(err) => match err.downcast_ref::<LaunchError>() {
                             Some(&LaunchError::Connection(_)) => {
