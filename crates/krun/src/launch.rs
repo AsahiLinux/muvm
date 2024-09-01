@@ -20,7 +20,7 @@ use std::time::Duration;
 use utils::env::find_in_path;
 use utils::launch::Launch;
 
-use crate::env::prepare_env_vars;
+use crate::env::prepare_proc_env_vars;
 
 pub const DYNAMIC_PORT_RANGE: Range<u32> = 50000..50200;
 
@@ -142,7 +142,7 @@ pub fn launch_or_lock(
     let cwd = env::current_dir()?;
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
-        let env = prepare_env_vars(env)?;
+        let env = prepare_proc_env_vars(env);
         if let Err(err) = wrapped_launch(port, command, command_args, env, cwd) {
             return Err(anyhow!("could not request launch to server: {err}"));
         }
@@ -188,7 +188,7 @@ pub fn launch_or_lock(
                     }
                 };
                 flock(net_ready, FlockOperation::LockShared)?;
-                let env = prepare_env_vars(env)?;
+                let env = prepare_proc_env_vars(env);
                 let mut tries = 0;
                 loop {
                     match wrapped_launch(

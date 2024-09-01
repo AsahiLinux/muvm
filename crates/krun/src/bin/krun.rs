@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use krun::cli_options::{options, Options};
 use krun::cpu::{get_fallback_cores, get_performance_cores};
-use krun::env::{find_krun_exec, prepare_env_vars};
+use krun::env::{find_krun_exec, prepare_vm_env_vars};
 use krun::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
@@ -326,7 +326,7 @@ fn launch_vm(options: Options, net_ready_file: File) -> Result<()> {
     };
 
     let mut env =
-        prepare_env_vars(Vec::new()).context("Failed to prepare environment variables")?;
+        prepare_vm_env_vars(Vec::new()).context("Failed to prepare environment variables")?;
     env.insert(
         "KRUN_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
