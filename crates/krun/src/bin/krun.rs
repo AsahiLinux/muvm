@@ -1,28 +1,33 @@
-use std::ffi::{c_char, CString};
-use std::os::fd::{IntoRawFd, OwnedFd};
-use std::path::Path;
-use std::{cmp, env};
-
 use anyhow::{anyhow, Context, Result};
-use krun::cli_options::options;
+use krun::cli_options::{options, Options};
 use krun::cpu::{get_fallback_cores, get_performance_cores};
-use krun::env::{find_krun_exec, prepare_env_vars};
-use krun::launch::{launch_or_lock, LaunchResult};
+use krun::env::{find_krun_exec, prepare_vm_env_vars};
+use krun::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
-    krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
-    krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
-    VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB,
-    VIRGLRENDERER_USE_EGL,
+    krun_add_vsock_port, krun_create_ctx, krun_set_console_output, krun_set_exec,
+    krun_set_gpu_options, krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config,
+    krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
+    VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
-use rustix::io::Errno;
+use rustix::io::{dup, Errno};
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
+use std::ffi::{c_char, CString};
+use std::fs::File;
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::path::Path;
+use std::process::Command;
+use std::{cmp, env};
+use uuid::Uuid;
+
+const LOCK_FD_ENV_VAR: &str = "__KRUN_DO_LAUNCH_VM_LOCK__";
+const NET_READY_FD_ENV_VAR: &str = "__KRUN_DO_LAUNCH_VM_NET_READY__";
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -33,8 +38,15 @@ fn main() -> Result<()> {
     }
 
     let options = options().fallback_to_usage().run();
+    if let Ok(lock_fd) = env::var(LOCK_FD_ENV_VAR) {
+        // SAFETY: We are hoping that whoever launched us did indeed put fds there.
+        let _lock_file = unsafe { File::from_raw_fd(lock_fd.parse()?) };
+        let net_ready = env::var(NET_READY_FD_ENV_VAR)?.parse()?;
+        let net_ready_file = unsafe { File::from_raw_fd(net_ready) };
+        return launch_vm(options, net_ready_file);
+    }
 
-    let (_lock_file, command, command_args, env) = match launch_or_lock(
+    let (lock_file, net_ready, command, command_args, env) = match launch_or_lock(
         options.server_port,
         options.command,
         options.command_args,
@@ -47,12 +59,31 @@ fn main() -> Result<()> {
         },
         LaunchResult::LockAcquired {
             lock_file,
+            net_ready,
             command,
             command_args,
             env,
-        } => (lock_file, command, command_args, env),
+        } => (lock_file, net_ready, command, command_args, env),
     };
+    // Make it lose CLOEXEC
+    let lock_fd = dup(lock_file)?;
+    let net_ready_fd = dup(net_ready)?;
+    Command::new(env::current_exe()?)
+        .args(env::args())
+        .env(LOCK_FD_ENV_VAR, format!("{}", lock_fd.as_raw_fd()))
+        .env(
+            NET_READY_FD_ENV_VAR,
+            format!("{}", net_ready_fd.as_raw_fd()),
+        )
+        .spawn()?;
+    drop(lock_fd);
+    drop(net_ready_fd);
+    let res = launch_or_lock(options.server_port, command, command_args, env)?;
+    assert!(matches!(res, LaunchResult::LaunchRequested));
+    Ok(())
+}
 
+fn launch_vm(options: Options, net_ready_file: File) -> Result<()> {
     {
         // Set the log level to "off".
         //
@@ -162,7 +193,7 @@ fn main() -> Result<()> {
             return Err(err).context("Failed to configure net mode");
         }
     }
-
+    let console_base;
     if let Ok(run_path) = env::var("XDG_RUNTIME_DIR") {
         let pulse_path = Path::new(&run_path).join("pulse/native");
         if pulse_path.exists() {
@@ -179,6 +210,7 @@ fn main() -> Result<()> {
                 return Err(err).context("Failed to configure vsock for pulse socket");
             }
         }
+
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
         if hidpipe_path.exists() {
             let hidpipe_path = CString::new(
@@ -194,6 +226,28 @@ fn main() -> Result<()> {
                 return Err(err).context("Failed to configure vsock for hidpipe socket");
             }
         }
+
+        let socket_dir = Path::new(&run_path).join("krun/socket");
+        std::fs::create_dir_all(&socket_dir)?;
+        // Dynamic ports: Applications may listen on these sockets as neeeded.
+        for port in DYNAMIC_PORT_RANGE {
+            let socket_path = socket_dir.join(format!("port-{}", port));
+            let socket_path = CString::new(
+                socket_path
+                    .to_str()
+                    .expect("socket_path should not contain invalid UTF-8"),
+            )
+            .context("Failed to process dynamic socket path as it contains NUL character")?;
+            // SAFETY: `socket_path` is a pointer to a `CString` with long enough lifetime.
+            let err = unsafe { krun_add_vsock_port(ctx_id, port, socket_path.as_ptr()) };
+            if err < 0 {
+                let err = Errno::from_raw_os_error(-err);
+                return Err(err).context("Failed to configure vsock for dynamic socket");
+            }
+        }
+        console_base = run_path;
+    } else {
+        console_base = "/tmp".to_string();
     }
 
     // Forward the native X11 display into the guest as a socket
@@ -258,28 +312,12 @@ fn main() -> Result<()> {
         CString::new(format!("{}", getgid().as_raw()))
             .expect("gid should not contain NUL character"),
     ];
-
     krun_guest_args.push(krun_server_path);
-    krun_guest_args.push(
-        CString::new(
-            command
-                .to_str()
-                .context("Failed to process command as it contains invalid UTF-8")?,
-        )
-        .context("Failed to process command as it contains NUL character")?,
-    );
-    let command_argc = command_args.len();
-    for arg in command_args {
-        let s = CString::new(arg)
-            .context("Failed to process command arg as it contains NUL character")?;
-        krun_guest_args.push(s);
-    }
 
     let krun_guest_args: Vec<*const c_char> = {
-        const KRUN_GUEST_ARGS_FIXED: usize = 4;
         // SAFETY: All pointers must be stored in the same allocation.
         // See https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html#safety
-        let mut vec = Vec::with_capacity(KRUN_GUEST_ARGS_FIXED + command_argc + 1);
+        let mut vec = Vec::with_capacity(krun_guest_args.len() + 1);
         for s in &krun_guest_args {
             vec.push(s.as_ptr());
         }
@@ -287,7 +325,8 @@ fn main() -> Result<()> {
         vec
     };
 
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+    let mut env =
+        prepare_vm_env_vars(Vec::new()).context("Failed to prepare environment variables")?;
     env.insert(
         "KRUN_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
@@ -337,6 +376,21 @@ fn main() -> Result<()> {
                 .context("Failed to configure the parameters for the executable to be run");
         }
     }
+
+    {
+        let uuid = Uuid::now_v7();
+        let path = Path::new(&console_base).join(format!("krun-{}.console", uuid));
+        let path = CString::new(path.to_str().expect("console_base contains invalid utf-8"))
+            .context("console_base contains NUL characters")?;
+        // SAFETY: path is a CString that outlives this call
+        let err = unsafe { krun_set_console_output(ctx_id, path.as_ptr()) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure console");
+        }
+    }
+
+    drop(net_ready_file);
 
     {
         // Start and enter the microVM. Unless there is some error while creating the

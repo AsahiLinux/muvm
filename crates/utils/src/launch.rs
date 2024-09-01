@@ -8,4 +8,5 @@ pub struct Launch {
     pub command: PathBuf,
     pub command_args: Vec<String>,
     pub env: HashMap<String, String>,
+    pub cwd: PathBuf,
 }

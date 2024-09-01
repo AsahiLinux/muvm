@@ -22,7 +22,7 @@ const WELL_KNOWN_ENV_VARS: [&str; 5] = [
 /// See https://github.com/AsahiLinux/docs/wiki/Devices
 const ASAHI_SOC_COMPAT_IDS: [&str; 1] = ["apple,arm-platform"];
 
-pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<String, String>> {
+pub fn prepare_vm_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<String, String>> {
     let mut env_map = HashMap::new();
 
     for key in WELL_KNOWN_ENV_VARS {
@@ -81,6 +81,41 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     debug!(env:? = env_map; "env vars");
 
     Ok(env_map)
+}
+
+const DROP_ENV_VARS: [&str; 17] = [
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DISPLAY",
+    "ICEAUTHORITY",
+    "KONSOLE_DBUS_SERVICE",
+    "KONSOLE_DBUS_SESSION",
+    "KONSOLE_DBUS_WINDOW",
+    "MANAGERPID",
+    "PAM_KWALLET5_LOGIN",
+    "SESSION_MANAGER",
+    "SYSTEMD_EXEC_PID",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SEAT",
+    "XDG_SEAT_PATH",
+    "XDG_SESSION_PATH",
+    "XDG_VTNR",
+];
+pub fn prepare_proc_env_vars(env: Vec<(String, Option<String>)>) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+    for (k, v) in env::vars() {
+        vars.insert(k, v);
+    }
+    for (k, v) in env {
+        if let Some(v) = v {
+            vars.insert(k, v);
+        }
+    }
+    for k in DROP_ENV_VARS {
+        vars.remove(k);
+    }
+    vars
 }
 
 pub fn find_krun_exec<P>(program: P) -> Result<CString>

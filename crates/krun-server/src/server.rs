@@ -164,8 +164,9 @@ async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf,
         command,
         command_args,
         env,
+        cwd,
     } = read_request(&mut stream).await?;
-    debug!(command:?, command_args:?, env:?; "received launch request");
+    debug!(command:?, command_args:?, env:?, cwd:?; "received launch request");
     envs.extend(env);
 
     let (stdout, stderr) = make_stdout_stderr(&command, &envs)?;
@@ -176,6 +177,7 @@ async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf,
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr)
+        .current_dir(cwd)
         .spawn()
         .with_context(|| format!("Failed to execute {command:?} as child process"));
     if let Err(err) = &res {

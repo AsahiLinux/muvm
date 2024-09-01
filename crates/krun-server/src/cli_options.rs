@@ -1,12 +1,8 @@
-use std::path::PathBuf;
-
-use bpaf::{any, construct, env, positional, OptionParser, Parser};
+use bpaf::{construct, env, OptionParser, Parser};
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub server_port: u32,
-    pub command: PathBuf,
-    pub command_args: Vec<String>,
 }
 
 pub fn options() -> OptionParser<Options> {
@@ -16,19 +12,8 @@ pub fn options() -> OptionParser<Options> {
         .argument("SERVER_PORT")
         .fallback(3334)
         .display_fallback();
-    let command = positional("COMMAND");
-    let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
-        (!["--help", "-h"].contains(&&*arg)).then_some(arg)
-    })
-    .many();
 
-    construct!(Options {
-        server_port,
-        // positionals
-        command,
-        command_args,
-    })
-    .to_options()
+    construct!(Options { server_port }).to_options()
 }
 
 #[cfg(test)]
