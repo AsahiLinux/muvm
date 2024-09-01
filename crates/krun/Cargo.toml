@@ -19,6 +19,7 @@ rustix = { workspace = true, features = ["process", "std", "use-libc-auxv"] }
 serde = { workspace = true, features = [] }
 serde_json = { workspace = true, features = ["std"] }
 utils = { workspace = true, features = [] }
+uuid = { workspace = true, features = ["v4"] }
 
 [features]
 default = []

@@ -1,17 +1,22 @@
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::{env, thread};
 
 use anyhow::{anyhow, Context, Result};
-use rustix::fs::{flock, FlockOperation};
+use rustix::fs::{flock, unlink, FlockOperation};
+use rustix::io::{dup, Errno};
 use rustix::path::Arg;
 use std::ops::Range;
-use std::process::{Child, Command};
+use std::os::fd::IntoRawFd;
+use std::os::unix::net::UnixListener;
+use std::os::unix::process::CommandExt;
+use std::process::Command;
+use std::time::Duration;
 use utils::env::find_in_path;
 use utils::launch::Launch;
 
@@ -23,6 +28,7 @@ pub enum LaunchResult {
     LaunchRequested,
     LockAcquired {
         lock_file: File,
+        net_ready: File,
         command: PathBuf,
         command_args: Vec<String>,
         env: Vec<(String, Option<String>)>,
@@ -54,26 +60,6 @@ impl Display for LaunchError {
     }
 }
 
-fn start_socat() -> Result<(Child, u32)> {
-    let run_path = env::var("XDG_RUNTIME_DIR")
-        .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
-    let socket_dir = Path::new(&run_path).join("krun/socket");
-    let socat_path =
-        find_in_path("socat")?.ok_or_else(|| anyhow!("Unable to find socat in PATH"))?;
-    for port in DYNAMIC_PORT_RANGE {
-        let path = socket_dir.join(&format!("port-{}", port));
-        if path.exists() {
-            continue;
-        }
-        let child = Command::new(&socat_path)
-            .arg(format!("unix-l:{}", path.as_os_str().to_string_lossy()))
-            .arg("-,raw,echo=0")
-            .spawn()?;
-        return Ok((child, port));
-    }
-    Err(anyhow!("Ran out of ports."))
-}
-
 fn escape_for_socat(s: String) -> String {
     let mut ret = String::with_capacity(s.len());
     for c in s.chars() {
@@ -88,6 +74,32 @@ fn escape_for_socat(s: String) -> String {
     ret
 }
 
+fn listen_on_free_socket() -> Result<(UnixListener, File, u32)> {
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
+    let socket_dir = Path::new(&run_path).join("krun/socket");
+    for port in DYNAMIC_PORT_RANGE {
+        let lock_path = socket_dir.join(&format!("port-{}.lock", port));
+        let lock = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(lock_path)?;
+        match flock(&lock, FlockOperation::NonBlockingLockExclusive) {
+            Err(Errno::WOULDBLOCK) => continue,
+            r => r?,
+        }
+        let path = socket_dir.join(&format!("port-{}", port));
+        match unlink(&path) {
+            Err(Errno::NOENT) => {},
+            r => r?,
+        }
+        return Ok((UnixListener::bind(path)?, lock, port));
+    }
+    Err(anyhow!("Ran out of ports."))
+}
+
 fn wrapped_launch(
     server_port: u32,
     mut command: PathBuf,
@@ -95,7 +107,9 @@ fn wrapped_launch(
     env: HashMap<String, String>,
     cwd: PathBuf,
 ) -> Result<()> {
-    let (mut socat, vsock_port) = start_socat()?;
+    let socat_path =
+        find_in_path("socat")?.ok_or_else(|| anyhow!("Unable to find socat in PATH"))?;
+    let (listener, lock, vsock_port) = listen_on_free_socket()?;
     command_args.insert(0, command.to_string_lossy().into_owned());
     command_args = vec![
         format!("vsock:2:{}", vsock_port),
@@ -106,8 +120,16 @@ fn wrapped_launch(
     ];
     command = "socat".into();
     request_launch(server_port, command, command_args, env, cwd)?;
-    socat.wait()?;
-    Ok(())
+
+    // Clear CLOEXEC
+    let listen_fd = dup(listener)?.into_raw_fd();
+    // Leak the lock into socat, so it holds onto it.
+    dup(lock)?.into_raw_fd();
+    Err(Command::new(&socat_path)
+        .arg(format!("accept-fd:{}", listen_fd))
+        .arg("-,raw,echo=0")
+        .exec()
+        .into())
 }
 
 pub fn launch_or_lock(
@@ -127,16 +149,45 @@ pub fn launch_or_lock(
         return Ok(LaunchResult::LaunchRequested);
     }
 
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
+    let net_ready_path = Path::new(&run_path).join("krun.ready");
+
     let (lock_file, running_server_port) = lock_file(server_port)?;
     match lock_file {
-        Some(lock_file) => Ok(LaunchResult::LockAcquired {
-            lock_file,
-            command,
-            command_args,
-            env,
-        }),
+        Some(lock_file) => {
+            let net_ready = File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(net_ready_path)?;
+            flock(&net_ready, FlockOperation::LockExclusive)?;
+
+            Ok(LaunchResult::LockAcquired {
+                lock_file,
+                net_ready,
+                command,
+                command_args,
+                env,
+            })
+        },
         None => {
             if let Some(port) = running_server_port {
+                let net_ready = loop {
+                    let net_ready = File::options().read(true).write(true).open(&net_ready_path);
+                    match net_ready {
+                        Ok(f) => break f,
+                        Err(e) => {
+                            if e.kind() == ErrorKind::NotFound {
+                                thread::sleep(Duration::from_millis(1));
+                                continue;
+                            }
+                            return Err(e.into());
+                        },
+                    }
+                };
+                flock(net_ready, FlockOperation::LockShared)?;
                 let env = prepare_env_vars(env)?;
                 let mut tries = 0;
                 loop {
