@@ -1,7 +1,6 @@
 use std::cmp;
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
-
 use anyhow::{Context, Result};
 use krun_guest::cli_options::options;
 use krun_guest::fex::setup_fex;
@@ -39,6 +38,8 @@ fn main() -> Result<()> {
         return Err(err).context("Failed to mount filesystems, bailing out");
     }
     Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
+    Command::new("/usr/bin/udevadm").arg("trigger").spawn()?.wait()?;
+    Command::new("/usr/bin/udevadm").arg("settle").spawn()?.wait()?;
 
     setup_fex()?;
 

@@ -28,7 +28,7 @@ pub fn configure_network() -> Result<()> {
     };
     if let Some(dhcpcd_path) = dhcpcd_path {
         let output = Command::new(dhcpcd_path)
-            .args(["-M", "--nodev", "eth0"])
+            .args(["-M", "eth0", "-e", "resolvconf=does-not-exist"])
             .output()
             .context("Failed to execute `dhcpcd` as child process")?;
         debug!(output:?; "dhcpcd output");
