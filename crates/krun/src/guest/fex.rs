@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use utils::env::find_in_path;
+
+use crate::utils::env::find_in_path;
 
 const FEX_X86_BINFMT_MISC_RULE: &str = ":FEX-x86:M:0:\\x7fELF\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\\
                                         x00\\x00\\x00\\x00\\x00\\x02\\x00\\x03\\x00:\\xff\\xff\\\

@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
 use rustix::path::Arg;
-use utils::launch::Launch;
 
 use crate::env::prepare_env_vars;
+use crate::utils::launch::Launch;
 
 pub enum LaunchResult {
     LaunchRequested,

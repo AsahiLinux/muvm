@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::socket::setup_socket_proxy;
+use super::socket::setup_socket_proxy;
 
 pub fn setup_x11_forwarding<P>(run_path: P) -> Result<()>
 where

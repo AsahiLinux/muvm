@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::fs::find_executable;
+use super::fs::find_executable;
 
 pub fn find_in_path<P>(program: P) -> Result<Option<PathBuf>>
 where

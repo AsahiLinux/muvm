@@ -1,24 +1,40 @@
 [package]
 name = "krun"
-version = { workspace = true }
-authors = { workspace = true }
-edition = { workspace = true }
-rust-version = { workspace = true }
-description = { workspace = true }
-repository = { workspace = true }
-license = { workspace = true }
+version = "0.1.0"
+authors = ["Sergio Lopez <slp@redhat.com>", "Teoh Han Hui <teohhanhui@gmail.com>"]
+edition = "2021"
+rust-version = "1.77.0"
+description = "Run programs from your system in a microVM"
+repository = "https://github.com/slp/krun"
+license = "MIT"
 
 [dependencies]
-anyhow = { workspace = true, features = ["std"] }
-bpaf = { workspace = true, features = [] }
-env_logger = { workspace = true, features = ["auto-color", "humantime", "unstable-kv"] }
-krun-sys = { workspace = true, features = [] }
-log = { workspace = true, features = ["kv"] }
-nix = { workspace = true, features = ["user"] }
-rustix = { workspace = true, features = ["process", "std", "use-libc-auxv"] }
-serde = { workspace = true, features = [] }
-serde_json = { workspace = true, features = ["std"] }
-utils = { workspace = true, features = [] }
+anyhow = { version = "1.0.82", default-features = false, features = ["std"] }
+bpaf = { version = "0.9.11", default-features = false, features = [] }
+byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
+env_logger = { version = "0.11.3", default-features = false, features = ["auto-color", "humantime", "unstable-kv"] }
+krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
+log = { version = "0.4.21", default-features = false, features = ["kv"] }
+nix = { version = "0.28.0", default-features = false, features = ["user"] }
+rustix = { version = "0.38.34", default-features = false, features = ["fs", "mount", "process", "std", "system", "use-libc-auxv"] }
+serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.117", default-features = false, features = ["std"] }
+tempfile = { version = "3.10.1", default-features = false, features = [] }
+tokio = { version = "1.38.0", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync"] }
+tokio-stream = { version = "0.1.15", default-features = false, features = ["net", "sync"] }
+uuid = { version = "1.10.0", default-features = false, features = ["std", "v7"] }
 
 [features]
 default = []
+
+[[bin]]
+name = "krun"
+path = "src/bin/krun.rs"
+
+[[bin]]
+name = "krun-guest"
+path = "src/guest/bin/krun-guest.rs"
+
+[[bin]]
+name = "krun-server"
+path = "src/server/bin/krun-server.rs"
