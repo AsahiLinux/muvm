@@ -5,8 +5,9 @@ use std::process::Command;
 use anyhow::{anyhow, Context, Result};
 use log::debug;
 use rustix::system::sethostname;
-use utils::env::find_in_path;
-use utils::fs::find_executable;
+
+use crate::utils::env::find_in_path;
+use crate::utils::fs::find_executable;
 
 pub fn configure_network() -> Result<()> {
     {

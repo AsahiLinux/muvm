@@ -5,7 +5,8 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use log::debug;
-use utils::env::find_in_path;
+
+use crate::utils::env::find_in_path;
 
 pub fn exec_sommelier<P>(command: P, command_args: &[String]) -> Result<()>
 where

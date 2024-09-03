@@ -5,9 +5,9 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use super::utils::env::find_in_path;
 use anyhow::{Context, Result};
 use log::debug;
-use utils::env::find_in_path;
 
 /// Automatically pass these environment variables to the microVM, if they are
 /// set.

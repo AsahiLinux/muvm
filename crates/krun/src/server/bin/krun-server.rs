@@ -1,8 +1,8 @@
 use std::os::unix::process::ExitStatusExt as _;
 
 use anyhow::Result;
-use krun_server::cli_options::options;
-use krun_server::server::{Server, State};
+use krun::server::cli_options::options;
+use krun::server::server::{Server, State};
 use log::error;
 use tokio::net::TcpListener;
 use tokio::process::Command;

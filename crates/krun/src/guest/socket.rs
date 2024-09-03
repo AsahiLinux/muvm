@@ -4,8 +4,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
-use utils::env::find_in_path;
-use utils::stdio::make_stdout_stderr;
+
+use crate::utils::env::find_in_path;
+use crate::utils::stdio::make_stdout_stderr;
 
 pub fn setup_socket_proxy<P>(socket_path: P, port: u16) -> Result<()>
 where

@@ -3,17 +3,17 @@ use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use krun_guest::cli_options::options;
-use krun_guest::fex::setup_fex;
-use krun_guest::mount::mount_filesystems;
-use krun_guest::net::configure_network;
-use krun_guest::socket::setup_socket_proxy;
-use krun_guest::sommelier::exec_sommelier;
-use krun_guest::user::setup_user;
-use krun_guest::x11::setup_x11_forwarding;
+use krun::guest::cli_options::options;
+use krun::guest::fex::setup_fex;
+use krun::guest::mount::mount_filesystems;
+use krun::guest::net::configure_network;
+use krun::guest::socket::setup_socket_proxy;
+use krun::guest::sommelier::exec_sommelier;
+use krun::guest::user::setup_user;
+use krun::guest::x11::setup_x11_forwarding;
+use krun::utils::env::find_in_path;
 use log::debug;
 use rustix::process::{getrlimit, setrlimit, Resource};
-use utils::env::find_in_path;
 
 fn main() -> Result<()> {
     env_logger::init();
