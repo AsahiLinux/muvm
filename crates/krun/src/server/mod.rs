@@ -1,2 +1,2 @@
 pub mod cli_options;
-pub mod server;
+pub mod worker;

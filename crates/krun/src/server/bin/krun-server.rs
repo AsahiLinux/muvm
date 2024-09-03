@@ -2,7 +2,7 @@ use std::os::unix::process::ExitStatusExt as _;
 
 use anyhow::Result;
 use krun::server::cli_options::options;
-use krun::server::server::{Server, State};
+use krun::server::worker::{State, Worker};
 use log::error;
 use tokio::net::TcpListener;
 use tokio::process::Command;
@@ -19,9 +19,9 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", options.server_port)).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
-    let mut server_handle = tokio::spawn(async move {
-        let mut server = Server::new(listener, state_tx);
-        server.run().await;
+    let mut worker_handle = tokio::spawn(async move {
+        let mut worker = Worker::new(listener, state_tx);
+        worker.run().await;
     });
     let command_status = Command::new(&options.command)
         .args(options.command_args)
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            res = &mut server_handle, if !server_died => {
+            res = &mut worker_handle, if !server_died => {
                 // If an error is received here, accepting connections from the
                 // TCP listener failed due to non-transient errors and the
                 // server is giving up and shutting down.
