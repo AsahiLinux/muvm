@@ -18,7 +18,7 @@ use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
 
 #[derive(Debug)]
-pub struct Server {
+pub struct Worker {
     listener_stream: TcpListenerStream,
     state_tx: watch::Sender<State>,
     child_set: JoinSet<(PathBuf, ChildResult)>,
@@ -32,9 +32,9 @@ pub struct State {
 
 type ChildResult = Result<ExitStatus, io::Error>;
 
-impl Server {
+impl Worker {
     pub fn new(listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
-        Server {
+        Worker {
             listener_stream: TcpListenerStream::new(listener),
             state_tx,
             child_set: JoinSet::new(),
