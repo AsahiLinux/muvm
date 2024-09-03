@@ -45,7 +45,9 @@ fn main() -> Result<()> {
     configure_network()?;
 
     if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
-        Command::new(hidpipe_client_path).arg(format!("{}", options.uid)).spawn()?;
+        Command::new(hidpipe_client_path)
+            .arg(format!("{}", options.uid))
+            .spawn()?;
     }
 
     let run_path = match setup_user(options.username, options.uid, options.gid) {
