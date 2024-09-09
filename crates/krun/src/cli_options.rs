@@ -13,6 +13,7 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
+    pub fex_images: Vec<String>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -66,6 +67,15 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument("MEM")
         .optional();
+    let fex_images = long("fex-image")
+        .short('f')
+        .help(
+            "Adds an erofs file to be mounted as a FEX rootfs.
+            May be specified multiple times.
+            First the base image, then overlays in order.",
+        )
+        .argument::<String>("FEX_IMAGE")
+        .many();
     let passt_socket = long("passt-socket")
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
@@ -89,6 +99,7 @@ pub fn options() -> OptionParser<Options> {
         mem,
         passt_socket,
         server_port,
+        fex_images,
         // positionals
         command,
         command_args,

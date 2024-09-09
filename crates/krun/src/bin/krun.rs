@@ -11,10 +11,10 @@ use krun::launch::{launch_or_lock, LaunchResult};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
-    krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
-    krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
-    VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB,
-    VIRGLRENDERER_USE_EGL,
+    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options,
+    krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
+    krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
+    VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
 use nix::sys::sysinfo::sysinfo;
@@ -23,6 +23,23 @@ use rustix::io::Errno;
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
+
+fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
+    let path_cstr = CString::new(path).unwrap();
+    let path_ptr = path_cstr.as_ptr();
+
+    let label_cstr = CString::new(label).unwrap();
+    let label_ptr = label_cstr.as_ptr();
+
+    // SAFETY: `path_ptr` and `label_ptr` are live pointers to C-strings
+    let err = unsafe { krun_add_disk(ctx_id, label_ptr, path_ptr, true) };
+
+    if err < 0 {
+        Err(Errno::from_raw_os_error(-err).into())
+    } else {
+        Ok(())
+    }
+}
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -120,6 +137,32 @@ fn main() -> Result<()> {
         let mut rlim = getrlimit(Resource::Nofile);
         rlim.current = rlim.maximum;
         setrlimit(Resource::Nofile, rlim).context("Failed to raise `RLIMIT_NOFILE`")?;
+    }
+
+    // If the user specified a disk image, we want to load and fail if it's missing. If the user
+    // did not specify a disk image, we want to load the system images if installed but fail
+    // gracefully if missing. This follows the principle of least surprise.
+    //
+    // What we don't want is a clever autodiscovery mechanism that searches $HOME for images.
+    // That's liable to blow up in exciting ways. Instead we require images to be selected
+    // explicitly, either on the CLI or hardcoded here.
+    let disks: Vec<String> = if !options.fex_images.is_empty() {
+        options.fex_images
+    } else {
+        let default_disks = vec![
+            "/usr/share/fex-emu/RootFS/default.erofs",
+            "/usr/share/fex-emu/overlays/mesa.erofs",
+        ];
+
+        default_disks
+            .iter()
+            .map(|x| x.to_string())
+            .filter(|x| Path::new(x).exists())
+            .collect()
+    };
+
+    for path in disks {
+        add_ro_disk(ctx_id, &path, &path).context("Failed to configure disk")?;
     }
 
     {
