@@ -13,6 +13,8 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
+    pub fex_rootfs: Option<String>,
+    pub fex_overlay: Option<String>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -70,6 +72,16 @@ pub fn options() -> OptionParser<Options> {
             "the maximum amount of RAM supported is 16384 MiB",
         )
         .optional();
+    let fex_rootfs = long("fex-rootfs")
+        .short('r')
+        .help("Set squashfs file to be mounted as a FEX rootfs")
+        .argument::<String>("FEX_ROOTFS")
+        .optional();
+    let fex_overlay = long("fex-overlay")
+        .short('l')
+        .help("Set squashfs file to be overlaid over the FEX rootfs")
+        .argument::<String>("FEX_OVERLAY")
+        .optional();
     let passt_socket = long("passt-socket")
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
@@ -93,6 +105,8 @@ pub fn options() -> OptionParser<Options> {
         mem,
         passt_socket,
         server_port,
+        fex_rootfs,
+        fex_overlay,
         // positionals
         command,
         command_args,

@@ -11,10 +11,10 @@ use krun::launch::{launch_or_lock, LaunchResult};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
-    krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options, krun_set_log_level,
-    krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
-    VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB,
-    VIRGLRENDERER_USE_EGL,
+    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options,
+    krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
+    krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
+    VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
 use nix::sys::sysinfo::sysinfo;
@@ -23,6 +23,23 @@ use rustix::io::Errno;
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
+
+fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
+    let path_cstr = CString::new(path).unwrap();
+    let path_ptr = path_cstr.as_ptr();
+
+    let label_cstr = CString::new(label).unwrap();
+    let label_ptr = label_cstr.as_ptr();
+
+    // SAFETY: `path_ptr` and `label_ptr` are live pointers to C-strings
+    let err = unsafe { krun_add_disk(ctx_id, label_ptr, path_ptr, true) };
+
+    if err < 0 {
+        Err(Errno::from_raw_os_error(-err).into())
+    } else {
+        Ok(())
+    }
+}
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -120,6 +137,27 @@ fn main() -> Result<()> {
         let mut rlim = getrlimit(Resource::Nofile);
         rlim.current = rlim.maximum;
         setrlimit(Resource::Nofile, rlim).context("Failed to raise `RLIMIT_NOFILE`")?;
+    }
+
+    #[rustfmt::skip]
+    let disks = [
+        ("rootfs",  options.fex_rootfs,  "/usr/share/fex-emu/rootfs.sqsh"),
+        ("overlay", options.fex_overlay, "/usr/share/fex-emu/mesa.sqsh"),
+    ];
+
+    // If the user specified a disk image, we want to load and fail if it's missing. If the user
+    // did not specify a disk image, we want to load the system-wide image if installed but fail
+    // gracefully if missing. This follows the principle of least surprise.
+    //
+    // What we don't want is a clever autodiscovery mechanism that searches $HOME for images.
+    // That's liable to blow up in exciting ways. Instead we require images to be selected
+    // explicitly, either on the CLI or hardcoded here.
+    for (label, path, default) in disks {
+        if let Some(path) = path {
+            add_ro_disk(ctx_id, &label, &path).context("Failed to configure disk")?;
+        } else if Path::new(default).exists() {
+            add_ro_disk(ctx_id, &label, &default).context("Failed to configure disk")?;
+        }
     }
 
     {
