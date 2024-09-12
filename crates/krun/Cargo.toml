@@ -16,6 +16,7 @@ env_logger = { version = "0.11.3", default-features = false, features = ["auto-c
 krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
 log = { version = "0.4.21", default-features = false, features = ["kv"] }
 nix = { version = "0.28.0", default-features = false, features = ["user"] }
+regex = { version = "1.10.6" }
 rustix = { version = "0.38.34", default-features = false, features = ["fs", "mount", "process", "std", "system", "use-libc-auxv"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.117", default-features = false, features = ["std"] }
