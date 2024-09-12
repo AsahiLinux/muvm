@@ -1,4 +1,5 @@
 use std::cmp;
+use std::env;
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 
@@ -7,7 +8,7 @@ use log::debug;
 use muvm::guest::cli_options::options;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::mount::mount_filesystems;
-use muvm::guest::net::configure_network;
+use muvm::guest::net::{configure_network, NetworkConfig};
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
@@ -16,6 +17,17 @@ use muvm::utils::env::find_in_path;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
+    let netconf = NetworkConfig {
+        address: env::var("MUVM_NETWORK_ADDRESS").ok(),
+        mask: env::var("MUVM_NETWORK_MASK").ok(),
+        router: env::var("MUVM_NETWORK_ROUTER").ok(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { tokio_main(netconf).await })
+}
+
+async fn tokio_main(netconf: NetworkConfig) -> Result<()> {
     env_logger::init();
 
     let options = options().run();
@@ -42,7 +54,9 @@ fn main() -> Result<()> {
 
     setup_fex()?;
 
-    configure_network()?;
+    if let Err(err) = configure_network(netconf).await {
+        eprintln!("Couldn't configure the network in the microVM: {err}");
+    }
 
     if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
         Command::new(hidpipe_client_path)

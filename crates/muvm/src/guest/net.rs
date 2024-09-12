@@ -1,16 +1,20 @@
 use std::fs;
 use std::io::Write;
-use std::os::unix::process::ExitStatusExt as _;
-use std::process::Command;
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
 
-use anyhow::{anyhow, Context, Result};
-use log::debug;
+use anyhow::{Context, Result};
+use futures_util::TryStreamExt;
+use rtnetlink::new_connection;
 use rustix::system::sethostname;
 
-use crate::utils::env::find_in_path;
-use crate::utils::fs::find_executable;
+pub struct NetworkConfig {
+    pub address: Option<String>,
+    pub mask: Option<String>,
+    pub router: Option<String>,
+}
 
-pub fn configure_network() -> Result<()> {
+pub async fn configure_network(netconf: NetworkConfig) -> Result<()> {
     // Allow unprivileged users to use ping, as most distros do by default.
     {
         let mut file = fs::File::options()
@@ -33,64 +37,28 @@ pub fn configure_network() -> Result<()> {
         sethostname(hostname.as_bytes()).context("Failed to set hostname")?;
     }
 
-    let dhcpcd_path = find_in_path("dhcpcd").context("Failed to check existence of `dhcpcd`")?;
-    let dhcpcd_path = if let Some(dhcpcd_path) = dhcpcd_path {
-        Some(dhcpcd_path)
-    } else {
-        find_executable("/sbin/dhcpcd").context("Failed to check existence of `/sbin/dhcpcd`")?
-    };
-    if let Some(dhcpcd_path) = dhcpcd_path {
-        let output = Command::new(dhcpcd_path)
-            .args(["-M", "--nodev", "eth0"])
-            .output()
-            .context("Failed to execute `dhcpcd` as child process")?;
-        debug!(output:?; "dhcpcd output");
-        if !output.status.success() {
-            let err = if let Some(code) = output.status.code() {
-                anyhow!("`dhcpcd` process exited with status code: {code}")
-            } else {
-                anyhow!(
-                    "`dhcpcd` process terminated by signal: {}",
-                    output
-                        .status
-                        .signal()
-                        .expect("either one of status code or signal should be set")
-                )
-            };
-            Err(err)?;
-        }
+    let address = Ipv4Addr::from_str(&netconf.address.context("Missing MUVM_NETWORK_ADDRESS")?)?;
+    let mask = u32::from(Ipv4Addr::from_str(
+        &netconf.mask.context("Missing MUVM_NETWORK_MASK")?,
+    )?);
+    let prefix = (!mask).leading_zeros() as u8;
+    let router = netconf.router.context("Missing MUVM_NETWORK_ROUTER")?;
+    let router = Ipv4Addr::from_str(&router)?;
 
-        return Ok(());
+    let (connection, handle, _) = new_connection().unwrap();
+    tokio::spawn(connection);
+    let mut links = handle.link().get().match_name("eth0".to_string()).execute();
+    if let Some(link) = links.try_next().await? {
+        handle
+            .address()
+            .add(link.header.index, IpAddr::V4(address), prefix)
+            .execute()
+            .await?;
+        handle.link().set(link.header.index).up().execute().await?
     }
-
-    let dhclient_path =
-        find_in_path("dhclient").context("Failed to check existence of `dhclient`")?;
-    let dhclient_path = if let Some(dhclient_path) = dhclient_path {
-        Some(dhclient_path)
-    } else {
-        find_executable("/sbin/dhclient")
-            .context("Failed to check existence of `/sbin/dhclient`")?
-    };
-    let dhclient_path =
-        dhclient_path.ok_or_else(|| anyhow!("could not find required `dhcpcd` or `dhclient`"))?;
-    let output = Command::new(dhclient_path)
-        .output()
-        .context("Failed to execute `dhclient` as child process")?;
-    debug!(output:?; "dhclient output");
-    if !output.status.success() {
-        let err = if let Some(code) = output.status.code() {
-            anyhow!("`dhclient` process exited with status code: {code}")
-        } else {
-            anyhow!(
-                "`dhclient` process terminated by signal: {}",
-                output
-                    .status
-                    .signal()
-                    .expect("either one of status code or signal should be set")
-            )
-        };
-        Err(err)?;
-    }
+    handle.route().add().v4().gateway(router).execute().await?;
+    fs::write("/etc/resolv.conf", format!("nameserver {}", router))
+        .expect("Failed to write resolv.conf");
 
     Ok(())
 }
