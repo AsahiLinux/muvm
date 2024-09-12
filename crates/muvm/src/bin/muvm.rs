@@ -233,13 +233,19 @@ fn main() -> Result<()> {
         }
     }
 
+    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+    env.insert(
+        "MUVM_SERVER_PORT".to_owned(),
+        options.server_port.to_string(),
+    );
+
     {
         let passt_fd: OwnedFd = if let Some(passt_socket) = options.passt_socket {
             connect_to_passt(passt_socket)
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port)
+            start_passt(options.server_port, &mut env)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -354,12 +360,6 @@ fn main() -> Result<()> {
     for arg in command_args {
         muvm_guest_args.push(arg);
     }
-
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
-    env.insert(
-        "MUVM_SERVER_PORT".to_owned(),
-        options.server_port.to_string(),
-    );
 
     let mut krun_config = KrunConfig {
         args: Vec::new(),

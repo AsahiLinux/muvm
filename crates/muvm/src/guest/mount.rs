@@ -138,8 +138,6 @@ pub fn mount_filesystems() -> Result<()> {
         println!("Failed to mount FEX rootfs, carrying on without.")
     }
 
-    place_etc("resolv.conf", None)?;
-
     mount2(
         Some("binfmt_misc"),
         "/proc/sys/fs/binfmt_misc",
