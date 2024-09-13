@@ -1,8 +1,13 @@
 use std::cmp;
+use std::fs;
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
+use std::env;
 
 use anyhow::{Context, Result};
+use futures_util::TryStreamExt;
 use krun::guest::cli_options::options;
 use krun::guest::fex::setup_fex;
 use krun::guest::mount::mount_filesystems;
@@ -13,9 +18,11 @@ use krun::guest::user::setup_user;
 use krun::guest::x11::setup_x11_forwarding;
 use krun::utils::env::find_in_path;
 use log::debug;
+use rtnetlink::{new_connection, Error, Handle};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init();
 
     let options = options().run();
@@ -43,6 +50,34 @@ fn main() -> Result<()> {
     setup_fex()?;
 
     configure_network()?;
+    
+    let address = env::var("KRUN_NETWORK_ADDRESS").context("Missing KRUN_NETWORK_ADDRESS")?;
+    let address = Ipv4Addr::from_str(&address)?;
+    let mask = env::var("KRUN_NETWORK_MASK").context("Missing KRUN_NETWORK_MASK")?;
+    let mask = Ipv4Addr::from_str(&mask)?;
+    let mask = u32::from(mask);
+    let prefix = (!mask).leading_zeros() as u8;
+    let router = env::var("KRUN_NETWORK_ROUTER").context("Missing KRUN_NETWORK_ROUTER")?;
+    let router = Ipv4Addr::from_str(&router)?;
+
+    let (connection, handle, _) = new_connection().unwrap();
+    tokio::spawn(connection);
+    let mut links = handle.link().get().match_name("eth0".to_string()).execute();
+    if let Some(link) = links.try_next().await? {
+        handle
+            .address()
+            .add(link.header.index, IpAddr::V4(address), prefix)
+            .execute()
+            .await?;
+       handle 
+            .link()
+            .set(link.header.index)
+            .up()
+            .execute()
+            .await?
+    }
+    handle.route().add().v4().gateway(router).execute().await?;
+    fs::write("/etc/resolv.conf", format!("nameserver {}", router)).expect("Unable to write file");
 
     if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
         Command::new(hidpipe_client_path)

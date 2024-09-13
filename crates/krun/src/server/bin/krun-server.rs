@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
 
     let options = options().run();
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", options.server_port)).await?;
+    let listener = TcpListener::bind(format!("0.0.0.0:2324")).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {

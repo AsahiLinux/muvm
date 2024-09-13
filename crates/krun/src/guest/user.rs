@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use nix::unistd::{setgid, setuid, Gid, Uid, User};
 
 pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
-    setup_directories(uid, gid)?;
+    //setup_directories(uid, gid)?;
 
     setgid(gid).context("Failed to setgid")?;
     setuid(uid).context("Failed to setuid")?;

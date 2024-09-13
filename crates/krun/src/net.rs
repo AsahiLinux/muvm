@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -5,7 +6,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use log::debug;
-use regex:Regex;
+use regex::Regex;
 use rustix::io::dup;
 
 pub fn connect_to_passt<P>(passt_socket_path: P) -> Result<UnixStream>
@@ -47,26 +48,31 @@ pub fn start_passt(server_port: u32, env: &mut HashMap<String, String>) -> Resul
         .output()
         .context("Failed to execute `passt` as child process")?;
 
-    let content =  String::from_utf8(output.stderr).context("Failed to parse `passt` output");
+    let content = String::from_utf8(output.stderr).context("Failed to parse `passt` output")?;
     println!("Output: {:?}", content);
 
-    let re = Regex::new(r".*assign: (?<address>.+)\n.*mask: (?<mask>.+)\n.*router: (?<router>.+).*\n").unwrap();
-        if let Some(caps) = re.captures(&content) {
-            if let Some(address) = caps.name("address") {
-                env.insert("KRUN_NETWORK_ADDR".to_owned(), address);
-            } else {
-                println!("Can't read network address from passt output. Expect degraded networking");
-            }
-            if let Some(mask) = caps.name("mask") {
-                env.insert("KRUN_NETWORK_MASK".to_owned(), mask);
-            } else {
-                println!("Can't read network mask from passt output. Expect degraded networking");
-            }
-            if let Some(router) = caps.name("router") {
-                env.insert("KRUN_NETWORK_ROUTER".to_owned(), mask);
-            } else {
-                println!("Can't read network router from passt output. Expect degraded networking");
-            }
+    let re =
+        Regex::new(r".*assign: (?<address>.+)\n.*mask: (?<mask>.+)\n.*router: (?<router>.+).*\n")
+            .unwrap();
+    if let Some(caps) = re.captures(&content) {
+        if let Some(address) = caps.name("address") {
+            env.insert("KRUN_NETWORK_ADDRESS".to_owned(), address.as_str().to_string());
+        } else {
+            println!("Can't read network address from passt output. Expect degraded networking");
+        }
+        if let Some(mask) = caps.name("mask") {
+            env.insert("KRUN_NETWORK_MASK".to_owned(), mask.as_str().to_string());
+        } else {
+            println!("Can't read network mask from passt output. Expect degraded networking");
+        }
+        if let Some(router) = caps.name("router") {
+            env.insert(
+                "KRUN_NETWORK_ROUTER".to_owned(),
+                router.as_str().to_string(),
+            );
+        } else {
+            println!("Can't read network router from passt output. Expect degraded networking");
+        }
     }
 
     Ok(parent_socket)

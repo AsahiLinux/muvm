@@ -21,6 +21,7 @@ pub fn configure_network() -> Result<()> {
         sethostname(hostname.as_bytes()).context("Failed to set hostname")?;
     }
 
+/*
     let dhcpcd_path = find_in_path("dhcpcd").context("Failed to check existence of `dhcpcd`")?;
     let dhcpcd_path = if let Some(dhcpcd_path) = dhcpcd_path {
         Some(dhcpcd_path)
@@ -79,6 +80,7 @@ pub fn configure_network() -> Result<()> {
         };
         Err(err)?;
     }
+    */
 
     Ok(())
 }

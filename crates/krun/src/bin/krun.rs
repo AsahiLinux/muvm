@@ -293,11 +293,6 @@ fn main() -> Result<()> {
         vec
     };
 
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
-    env.insert(
-        "KRUN_SERVER_PORT".to_owned(),
-        options.server_port.to_string(),
-    );
     let env: Vec<CString> = {
         let mut vec = Vec::with_capacity(env.len());
         for (key, value) in env {
