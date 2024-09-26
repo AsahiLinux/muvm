@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env::{self, VarError};
-use std::ffi::CString;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -83,7 +82,7 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     Ok(env_map)
 }
 
-pub fn find_krun_exec<P>(program: P) -> Result<CString>
+pub fn find_krun_exec<P>(program: P) -> Result<String>
 where
     P: AsRef<Path>,
 {
@@ -97,10 +96,9 @@ where
         let path = path.context("Failed to get path of current running executable")?;
         path.with_file_name(program)
     };
-    let path = CString::new(path.to_str().with_context(|| {
+    let path = path.to_str().with_context(|| {
         format!("Failed to process {program:?} path as it contains invalid UTF-8")
-    })?)
-    .with_context(|| format!("Failed to process {program:?} path as it contains NUL character"))?;
+    })?;
 
-    Ok(path)
+    Ok(path.to_string())
 }
