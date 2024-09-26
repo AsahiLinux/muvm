@@ -1,4 +1,5 @@
 use std::ffi::{c_char, CString};
+use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
 use std::{cmp, env};
@@ -11,7 +12,7 @@ use krun::launch::{launch_or_lock, LaunchResult};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
-    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_exec, krun_set_gpu_options,
+    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_env, krun_set_gpu_options,
     krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
     krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
@@ -23,6 +24,21 @@ use rustix::io::Errno;
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
+use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
+
+#[derive(Serialize, Deserialize)]
+pub struct KrunConfig {
+    #[serde(rename = "Cmd")]
+    args: Vec<String>,
+    #[serde(rename = "Env")]
+    envs: Vec<String>,
+}
+#[derive(Serialize, Deserialize)]
+pub struct KrunBaseConfig {
+    #[serde(rename = "Config")]
+    config: KrunConfig,
+}
 
 fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
     let path_cstr = CString::new(path).unwrap();
@@ -294,90 +310,66 @@ fn main() -> Result<()> {
     let krun_guest_path = find_krun_exec("krun-guest")?;
     let krun_server_path = find_krun_exec("krun-server")?;
 
-    let mut krun_guest_args: Vec<CString> = vec![
-        CString::new(username).expect("username should not contain NUL character"),
-        CString::new(format!("{}", getuid().as_raw()))
-            .expect("uid should not contain NUL character"),
-        CString::new(format!("{}", getgid().as_raw()))
-            .expect("gid should not contain NUL character"),
+    let mut krun_guest_args: Vec<String> = vec![
+        krun_guest_path,
+        username,
+        format!("{uid}", uid = getuid().as_raw()),
+        format!("{gid}", gid = getgid().as_raw()),
+        krun_server_path,
+        command
+            .to_str()
+            .context("Failed to process command as it contains invalid UTF-8")?
+            .to_string(),
     ];
-
-    krun_guest_args.push(krun_server_path);
-    krun_guest_args.push(
-        CString::new(
-            command
-                .to_str()
-                .context("Failed to process command as it contains invalid UTF-8")?,
-        )
-        .context("Failed to process command as it contains NUL character")?,
-    );
-    let command_argc = command_args.len();
     for arg in command_args {
-        let s = CString::new(arg)
-            .context("Failed to process command arg as it contains NUL character")?;
-        krun_guest_args.push(s);
+        krun_guest_args.push(arg);
     }
-
-    let krun_guest_args: Vec<*const c_char> = {
-        const KRUN_GUEST_ARGS_FIXED: usize = 4;
-        // SAFETY: All pointers must be stored in the same allocation.
-        // See https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html#safety
-        let mut vec = Vec::with_capacity(KRUN_GUEST_ARGS_FIXED + command_argc + 1);
-        for s in &krun_guest_args {
-            vec.push(s.as_ptr());
-        }
-        vec.push(std::ptr::null());
-        vec
-    };
 
     let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
     env.insert(
         "KRUN_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
     );
-    let env: Vec<CString> = {
-        let mut vec = Vec::with_capacity(env.len());
-        for (key, value) in env {
-            let s = CString::new(format!("{key}={value}")).with_context(|| {
-                format!("Failed to process `{key}` env var as it contains NUL character")
-            })?;
-            vec.push(s);
-        }
-        vec
+
+    let mut krun_config = KrunConfig {
+        args: Vec::new(),
+        envs: Vec::new(),
     };
-    let env: Vec<*const c_char> = {
-        // SAFETY: All pointers must be stored in the same allocation.
-        // See https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html#safety
-        let mut vec = Vec::with_capacity(env.len() + 1);
-        for s in &env {
-            vec.push(s.as_ptr());
-        }
-        vec.push(std::ptr::null());
-        vec
+    for arg in krun_guest_args {
+        krun_config.args.push(arg);
+    }
+    for (key, value) in env {
+        krun_config.envs.push(format!("{}={}", key, value));
+    }
+    let krun_config = KrunBaseConfig {
+        config: krun_config,
     };
 
+    // SAFETY: `config_file` lifetime needs to exceed krun_start_enter's
+    let mut config_file = NamedTempFile::new()
+        .context("Failed to create a temporary file to store the guest config")?;
+    write!(
+        config_file,
+        "{}",
+        serde_json::to_string(&krun_config)
+            .context("Failed to transform KrunConfig into a JSON string")?
+    )
+    .context("Failed to write to temporary config file")?;
+
+    let krun_config_env = CString::new(format!("KRUN_CONFIG={}", config_file.path().display()))
+        .context("Failed to process config_file var as it contains NUL character")?;
+    let env: Vec<*const c_char> = vec![krun_config_env.as_ptr(), std::ptr::null()];
+
     {
-        // Specify the path of the binary to be executed in the isolated context,
-        // relative to the root path.
+        // Sets environment variables to be configured in the context of the executable.
         //
         // SAFETY:
-        // * `krun_guest_path` is a pointer to a `CString` with long enough lifetime.
-        // * `krun_guest_args` is a pointer to a `Vec` of pointers to `CString`s all
-        //   with long enough lifetime.
         // * `env` is a pointer to a `Vec` of pointers to `CString`s all with long
         //   enough lifetime.
-        let err = unsafe {
-            krun_set_exec(
-                ctx_id,
-                krun_guest_path.as_ptr(),
-                krun_guest_args.as_ptr(),
-                env.as_ptr(),
-            )
-        };
+        let err = unsafe { krun_set_env(ctx_id, env.as_ptr()) };
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
-            return Err(err)
-                .context("Failed to configure the parameters for the executable to be run");
+            return Err(err).context("Failed to set the environment variables in the guest");
         }
     }
 
