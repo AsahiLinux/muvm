@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::os::unix::process::ExitStatusExt as _;
 use std::process::Command;
 
@@ -10,6 +11,17 @@ use crate::utils::env::find_in_path;
 use crate::utils::fs::find_executable;
 
 pub fn configure_network() -> Result<()> {
+    // Allow unprivileged users to use ping, as most distros do by default.
+    {
+        let mut file = fs::File::options()
+            .write(true)
+            .open("/proc/sys/net/ipv4/ping_group_range")
+            .context("Failed to open ipv4/ping_group_range for writing")?;
+
+        file.write_all(format!("{} {}", 0, 2147483647).as_bytes())
+            .context("Failed to extend ping group range")?;
+    }
+
     {
         let hostname =
             fs::read_to_string("/etc/hostname").context("Failed to read `/etc/hostname`")?;
