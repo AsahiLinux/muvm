@@ -93,7 +93,7 @@ fn mount_fex_rootfs() -> Result<()> {
 pub fn mount_filesystems() -> Result<()> {
     make_tmpfs("/var/run")?;
 
-    if let Err(_) = mount_fex_rootfs() {
+    if mount_fex_rootfs().is_err() {
         println!("Failed to mount FEX rootfs, carrying on without.")
     }
 
