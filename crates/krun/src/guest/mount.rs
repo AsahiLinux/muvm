@@ -80,11 +80,13 @@ fn mount_fex_rootfs() -> Result<()> {
     // and a Config.json telling FEX to use FUSE. Neither should be visible to the guest. Instead,
     // we want to replace the folders and tell FEX to use our mounted rootfs
     for base in ["/usr/share/fex-emu", "/usr/local/share/fex-emu"] {
-        let json = format!("{{\"Config\":{{\"RootFS\":\"{dir_rootfs}\"}}}}\n");
-        let path = base.to_string() + "/Config.json";
+        if Path::new(base).exists() {
+            let json = format!("{{\"Config\":{{\"RootFS\":\"{dir_rootfs}\"}}}}\n");
+            let path = base.to_string() + "/Config.json";
 
-        make_tmpfs(base)?;
-        File::create(Path::new(&path))?.write_all(json.as_bytes())?;
+            make_tmpfs(base)?;
+            File::create(Path::new(&path))?.write_all(json.as_bytes())?;
+        }
     }
 
     Ok(())
