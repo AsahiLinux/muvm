@@ -149,7 +149,7 @@ fn main() -> Result<()> {
     let disks: Vec<String> = if !options.fex_images.is_empty() {
         options.fex_images
     } else {
-        let default_disks = vec![
+        let default_disks = [
             "/usr/share/fex-emu/RootFS/default.erofs",
             "/usr/share/fex-emu/overlays/mesa.erofs",
         ];
