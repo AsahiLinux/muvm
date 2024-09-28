@@ -1,8 +1,8 @@
+use std::env;
 use std::ffi::{c_char, CString};
 use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
-use std::{cmp, env};
 
 use anyhow::{anyhow, Context, Result};
 use krun::cli_options::options;
@@ -12,7 +12,7 @@ use krun::launch::{launch_or_lock, LaunchResult};
 use krun::net::{connect_to_passt, start_passt};
 use krun::types::MiB;
 use krun_sys::{
-    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_env, krun_set_gpu_options,
+    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_env, krun_set_gpu_options2,
     krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
     krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
@@ -120,13 +120,21 @@ fn main() -> Result<()> {
                 .or_else(|_err| get_fallback_cores())?
         };
         let num_vcpus = cpu_list.iter().fold(0, |acc, cpus| acc + cpus.len()) as u8;
-        let ram_mib = if let Some(ram_mib) = options.mem {
-            ram_mib
-        } else {
-            let sysinfo = sysinfo().context("Failed to get system information")?;
-            let ram_total = sysinfo.ram_total() / 1024 / 1024;
-            cmp::min(MiB::from((ram_total as f64 * 0.8) as u32), MiB::from(32768))
-        };
+
+        let sysinfo = sysinfo().context("Failed to get system information")?;
+        let ram_total_mib = (sysinfo.ram_total() / (1024 * 1024)) as u32;
+
+        // By default, set the microVM RAM to be 80% of the system's RAM.
+        let ram_mib = options
+            .mem
+            .unwrap_or(MiB::from((ram_total_mib as f64 * 0.8) as u32));
+        // VRAM is actually the SHM window for virtio-gpu. The userspace drivers in the
+        // guest are expected to be conservative and tell applications that the amount
+        // of VRAM is just a percentage of the guest's RAM, so we can afford being more
+        // aggressive here and set the window to be as large as the system's RAM, leaving
+        // some room for dealing with potential fragmentation.
+        let vram_mib = options.vram.unwrap_or(MiB::from(ram_total_mib as u32));
+
         // Bind the microVM to the specified CPU cores.
         let mut cpuset = CpuSet::new();
         for cpus in cpu_list {
@@ -145,6 +153,23 @@ fn main() -> Result<()> {
             let err = Errno::from_raw_os_error(-err);
             return Err(err)
                 .context("Failed to configure the number of vCPUs and/or the amount of RAM");
+        }
+
+        let virgl_flags = VIRGLRENDERER_USE_EGL
+            | VIRGLRENDERER_DRM
+            | VIRGLRENDERER_THREAD_SYNC
+            | VIRGLRENDERER_USE_ASYNC_FENCE_CB;
+        // SAFETY: Safe as no pointers involved.
+        let err = unsafe {
+            krun_set_gpu_options2(
+                ctx_id,
+                virgl_flags,
+                (u32::from(vram_mib) as u64) * 1024 * 1024,
+            )
+        };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure gpu");
         }
     }
 
@@ -188,19 +213,6 @@ fn main() -> Result<()> {
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure root path");
-        }
-    }
-
-    {
-        let virgl_flags = VIRGLRENDERER_USE_EGL
-            | VIRGLRENDERER_DRM
-            | VIRGLRENDERER_THREAD_SYNC
-            | VIRGLRENDERER_USE_ASYNC_FENCE_CB;
-        // SAFETY: Safe as no pointers involved.
-        let err = unsafe { krun_set_gpu_options(ctx_id, virgl_flags) };
-        if err < 0 {
-            let err = Errno::from_raw_os_error(-err);
-            return Err(err).context("Failed to configure gpu");
         }
     }
 

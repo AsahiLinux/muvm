@@ -11,6 +11,7 @@ pub struct Options {
     pub cpu_list: Vec<Range<u16>>,
     pub env: Vec<(String, Option<String>)>,
     pub mem: Option<MiB>,
+    pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
     pub fex_images: Vec<String>,
@@ -67,6 +68,17 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument("MEM")
         .optional();
+    let vram = long("vram")
+        .help(
+            "The amount of Video RAM, in MiB, that will be available to this microVM.
+            The memory configured for the microVM will not be reserved
+            immediately. Instead, it will be provided as the guest demands
+            it, and will be returned to the host once the guest releases
+            the underlying resources.
+    [default: same as the total amount of RAM in the system]",
+        )
+        .argument("VRAM")
+        .optional();
     let fex_images = long("fex-image")
         .short('f')
         .help(
@@ -97,6 +109,7 @@ pub fn options() -> OptionParser<Options> {
         cpu_list,
         env,
         mem,
+        vram,
         passt_socket,
         server_port,
         fex_images,
