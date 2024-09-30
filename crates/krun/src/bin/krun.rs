@@ -167,7 +167,8 @@ fn main() -> Result<()> {
     } else {
         let default_disks = [
             "/usr/share/fex-emu/RootFS/default.erofs",
-            "/usr/share/fex-emu/overlays/mesa.erofs",
+            "/usr/share/fex-emu/overlays/mesa-i386.erofs",
+            "/usr/share/fex-emu/overlays/mesa-x86_64.erofs",
         ];
 
         default_disks
