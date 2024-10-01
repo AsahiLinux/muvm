@@ -23,8 +23,8 @@ where
         Path::new("/tmp")
     };
     let uuid = Uuid::now_v7();
-    let path_stdout = base.join(format!("krun-{filename}-{uuid}.stdout"));
-    let path_stderr = base.join(format!("krun-{filename}-{uuid}.stderr"));
+    let path_stdout = base.join(format!("muvm-{filename}-{uuid}.stdout"));
+    let path_stderr = base.join(format!("muvm-{filename}-{uuid}.stderr"));
     Ok((
         File::create_new(path_stdout)?.into(),
         File::create_new(path_stderr)?.into(),

@@ -5,12 +5,6 @@ use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use krun::cli_options::options;
-use krun::cpu::{get_fallback_cores, get_performance_cores};
-use krun::env::{find_krun_exec, prepare_env_vars};
-use krun::launch::{launch_or_lock, LaunchResult};
-use krun::net::{connect_to_passt, start_passt};
-use krun::types::MiB;
 use krun_sys::{
     krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_env, krun_set_gpu_options2,
     krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
@@ -18,6 +12,12 @@ use krun_sys::{
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
+use muvm::cli_options::options;
+use muvm::cpu::{get_fallback_cores, get_performance_cores};
+use muvm::env::{find_muvm_exec, prepare_env_vars};
+use muvm::launch::{launch_or_lock, LaunchResult};
+use muvm::net::{connect_to_passt, start_passt};
+use muvm::types::MiB;
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
 use rustix::io::Errno;
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
         options.env,
     )? {
         LaunchResult::LaunchRequested => {
-            // There was a krun instance already running and we've requested it
+            // There was a muvm instance already running and we've requested it
             // to launch the command successfully, so all the work is done.
             return Ok(());
         },
@@ -337,27 +337,27 @@ fn main() -> Result<()> {
         }
     }
 
-    let krun_guest_path = find_krun_exec("krun-guest")?;
-    let krun_server_path = find_krun_exec("krun-server")?;
+    let muvm_guest_path = find_muvm_exec("muvm-guest")?;
+    let muvm_server_path = find_muvm_exec("muvm-server")?;
 
-    let mut krun_guest_args: Vec<String> = vec![
-        krun_guest_path,
+    let mut muvm_guest_args: Vec<String> = vec![
+        muvm_guest_path,
         username,
         format!("{uid}", uid = getuid().as_raw()),
         format!("{gid}", gid = getgid().as_raw()),
-        krun_server_path,
+        muvm_server_path,
         command
             .to_str()
             .context("Failed to process command as it contains invalid UTF-8")?
             .to_string(),
     ];
     for arg in command_args {
-        krun_guest_args.push(arg);
+        muvm_guest_args.push(arg);
     }
 
     let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
     env.insert(
-        "KRUN_SERVER_PORT".to_owned(),
+        "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
     );
 
@@ -365,7 +365,7 @@ fn main() -> Result<()> {
         args: Vec::new(),
         envs: Vec::new(),
     };
-    for arg in krun_guest_args {
+    for arg in muvm_guest_args {
         krun_config.args.push(arg);
     }
     for (key, value) in env {

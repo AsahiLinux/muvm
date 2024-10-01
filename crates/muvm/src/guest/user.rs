@@ -13,12 +13,12 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
     setuid(uid).context("Failed to setuid")?;
 
     let path = tempfile::Builder::new()
-        .prefix(&format!("krun-run-{uid}-"))
+        .prefix(&format!("muvm-run-{uid}-"))
         .permissions(Permissions::from_mode(0o755))
         .tempdir()
         .context("Failed to create temp dir for `XDG_RUNTIME_DIR`")?
         .into_path();
-    // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
+    // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
     env::set_var("XDG_RUNTIME_DIR", &path);
 
@@ -28,7 +28,7 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
         .with_context(|| format!("Failed to get user `{username}` from user database"))?;
 
     {
-        // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
+        // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
         // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
         env::set_var("HOME", user.dir);
     }

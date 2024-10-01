@@ -37,13 +37,13 @@ impl Display for LaunchError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match *self {
             Self::Connection(ref err) => {
-                write!(f, "could not connect to krun server: {err}")
+                write!(f, "could not connect to muvm server: {err}")
             },
             Self::Json(ref err) => {
                 write!(f, "could not serialize into JSON: {err}")
             },
             Self::Server(ref err) => {
-                write!(f, "krun server returned an error: {err}")
+                write!(f, "muvm server returned an error: {err}")
             },
         }
     }
@@ -55,7 +55,7 @@ pub fn launch_or_lock(
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
 ) -> Result<LaunchResult> {
-    let running_server_port = env::var("KRUN_SERVER_PORT").ok();
+    let running_server_port = env::var("MUVM_SERVER_PORT").ok();
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
         let env = prepare_env_vars(env)?;
@@ -98,7 +98,7 @@ pub fn launch_or_lock(
                 }
             } else {
                 Err(anyhow!(
-                    "krun is already running but couldn't find its server port, bailing out"
+                    "muvm is already running but couldn't find its server port, bailing out"
                 ))
             }
         },
@@ -108,7 +108,7 @@ pub fn launch_or_lock(
 fn lock_file(server_port: u32) -> Result<(Option<File>, Option<u32>)> {
     let run_path = env::var("XDG_RUNTIME_DIR")
         .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
-    let lock_path = Path::new(&run_path).join("krun.lock");
+    let lock_path = Path::new(&run_path).join("muvm.lock");
 
     let mut lock_file = if !lock_path.exists() {
         let lock_file = File::create(lock_path).context("Failed to create lock file")?;

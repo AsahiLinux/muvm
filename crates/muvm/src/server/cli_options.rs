@@ -10,7 +10,7 @@ pub struct Options {
 }
 
 pub fn options() -> OptionParser<Options> {
-    let server_port = env("KRUN_SERVER_PORT")
+    let server_port = env("MUVM_SERVER_PORT")
         .short('p')
         .help("TCP port to listen for command launch requests")
         .argument("SERVER_PORT")

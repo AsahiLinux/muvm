@@ -133,10 +133,10 @@ pub fn mount_filesystems() -> Result<()> {
     )
     .context("Failed to mount `binfmt_misc`")?;
 
-    // Expose the host filesystem (without any overlaid mounts) as /run/krun-host
-    let host_path = Path::new("/run/krun-host");
+    // Expose the host filesystem (without any overlaid mounts) as /run/muvm-host
+    let host_path = Path::new("/run/muvm-host");
     std::fs::create_dir_all(host_path)?;
-    mount_bind("/", host_path).context("Failed to bind-mount / on /run/krun-host")?;
+    mount_bind("/", host_path).context("Failed to bind-mount / on /run/muvm-host")?;
 
     if Path::new("/tmp/.X11-unix").exists() {
         // Mount a tmpfs for X11 sockets, so the guest doesn't clobber host X server
