@@ -14,7 +14,7 @@ const WELL_KNOWN_ENV_VARS: [&str; 5] = [
     "LD_LIBRARY_PATH",
     "LIBGL_DRIVERS_PATH",
     "MESA_LOADER_DRIVER_OVERRIDE", // needed for asahi
-    "PATH",                        // needed by `krun-guest` program
+    "PATH",                        // needed by `muvm-guest` program
     "RUST_LOG",
 ];
 
@@ -65,13 +65,13 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     }
 
     // If we have an X11 display in the host, set HOST_DISPLAY in the guest.
-    // krun-guest will then use this to set up xauth and replace it with :1
+    // muvm-guest will then use this to set up xauth and replace it with :1
     // (which is forwarded to the host display).
     if let Ok(display) = env::var("DISPLAY") {
         env_map.insert("HOST_DISPLAY".to_string(), display);
 
         // And forward XAUTHORITY. This will be modified to fix the
-        // display name in krun-guest.
+        // display name in muvm-guest.
         if let Ok(xauthority) = env::var("XAUTHORITY") {
             env_map.insert("XAUTHORITY".to_string(), xauthority);
         }
@@ -82,7 +82,7 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     Ok(env_map)
 }
 
-pub fn find_krun_exec<P>(program: P) -> Result<String>
+pub fn find_muvm_exec<P>(program: P) -> Result<String>
 where
     P: AsRef<Path>,
 {

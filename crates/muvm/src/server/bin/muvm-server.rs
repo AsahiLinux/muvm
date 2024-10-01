@@ -1,9 +1,9 @@
 use std::os::unix::process::ExitStatusExt as _;
 
 use anyhow::Result;
-use krun::server::cli_options::options;
-use krun::server::worker::{State, Worker};
 use log::error;
+use muvm::server::cli_options::options;
+use muvm::server::worker::{State, Worker};
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
                     return Ok(());
                 }
                 println!(
-                    "Waiting for {} other commands launched through this krun server to exit...",
+                    "Waiting for {} other commands launched through this muvm server to exit...",
                     state.child_processes()
                 );
                 println!("Press Ctrl+C to force quit");

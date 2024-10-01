@@ -12,7 +12,7 @@ pub fn setup_x11_forwarding<P>(run_path: P) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    // Set by krun if DISPLAY was provided from the host.
+    // Set by muvm if DISPLAY was provided from the host.
     let host_display = match env::var("HOST_DISPLAY") {
         Ok(d) => d,
         Err(_) => return Ok(()),
@@ -27,12 +27,12 @@ where
 
     // Set HOST_DISPLAY to :1, which is the display number within the guest
     // at which the actual host display is accessible.
-    // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
+    // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
     env::set_var("HOST_DISPLAY", ":1");
 
     if let Ok(xauthority) = std::env::var("XAUTHORITY") {
-        let src_path = format!("/run/krun-host/{}", xauthority);
+        let src_path = format!("/run/muvm-host/{}", xauthority);
         let mut rdr = File::open(src_path)?;
 
         let dst_path = run_path.as_ref().join("xauth");
@@ -82,7 +82,7 @@ where
             break;
         }
 
-        // SAFETY: Safe if and only if `krun-guest` program is not multithreaded.
+        // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
         // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
         env::set_var("XAUTHORITY", dst_path);
     }

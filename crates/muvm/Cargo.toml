@@ -1,11 +1,11 @@
 [package]
-name = "krun"
+name = "muvm"
 version = "0.1.0"
 authors = ["Sergio Lopez <slp@redhat.com>", "Teoh Han Hui <teohhanhui@gmail.com>"]
 edition = "2021"
 rust-version = "1.77.0"
 description = "Run programs from your system in a microVM"
-repository = "https://github.com/slp/krun"
+repository = "https://github.com/AsahiLinux/muvm"
 license = "MIT"
 
 [dependencies]
@@ -28,13 +28,13 @@ uuid = { version = "1.10.0", default-features = false, features = ["std", "v7"] 
 default = []
 
 [[bin]]
-name = "krun"
-path = "src/bin/krun.rs"
+name = "muvm"
+path = "src/bin/muvm.rs"
 
 [[bin]]
-name = "krun-guest"
-path = "src/guest/bin/krun-guest.rs"
+name = "muvm-guest"
+path = "src/guest/bin/muvm-guest.rs"
 
 [[bin]]
-name = "krun-server"
-path = "src/server/bin/krun-server.rs"
+name = "muvm-server"
+path = "src/server/bin/muvm-server.rs"

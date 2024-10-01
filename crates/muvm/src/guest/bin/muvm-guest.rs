@@ -3,16 +3,16 @@ use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use krun::guest::cli_options::options;
-use krun::guest::fex::setup_fex;
-use krun::guest::mount::mount_filesystems;
-use krun::guest::net::configure_network;
-use krun::guest::socket::setup_socket_proxy;
-use krun::guest::sommelier::exec_sommelier;
-use krun::guest::user::setup_user;
-use krun::guest::x11::setup_x11_forwarding;
-use krun::utils::env::find_in_path;
 use log::debug;
+use muvm::guest::cli_options::options;
+use muvm::guest::fex::setup_fex;
+use muvm::guest::mount::mount_filesystems;
+use muvm::guest::net::configure_network;
+use muvm::guest::socket::setup_socket_proxy;
+use muvm::guest::sommelier::exec_sommelier;
+use muvm::guest::user::setup_user;
+use muvm::guest::x11::setup_x11_forwarding;
+use muvm::utils::env::find_in_path;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
