@@ -2,11 +2,14 @@ use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::socket::setup_socket_proxy;
+
+use crate::utils::env::find_in_path;
 
 pub fn setup_x11_forwarding<P>(run_path: P) -> Result<()>
 where
@@ -23,7 +26,17 @@ where
     }
     let host_display = &host_display[1..];
 
-    setup_socket_proxy(Path::new("/tmp/.X11-unix/X1"), 6000)?;
+    let x112virtgpu_path =
+        find_in_path("x112virtgpu").context("Failed to check existence of `x112virtgpu`")?;
+
+    if x112virtgpu_path.is_some() {
+        let mut cmd = Command::new(x112virtgpu_path.unwrap());
+        cmd.args(["--listen-display", ":1"]);
+
+        cmd.spawn().context("Failed to spawn `x112virtgpu`")?;
+    } else {
+        setup_socket_proxy(Path::new("/tmp/.X11-unix/X1"), 6000)?;
+    }
 
     // Set HOST_DISPLAY to :1, which is the display number within the guest
     // at which the actual host display is accessible.
