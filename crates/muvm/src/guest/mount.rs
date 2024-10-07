@@ -92,16 +92,23 @@ fn mount_fex_rootfs() -> Result<()> {
     Ok(())
 }
 
-pub fn place_etc(file: &str) -> Result<()> {
+pub fn place_etc(file: &str, contents: Option<&str>) -> Result<()> {
     let tmp = "/tmp/".to_string() + file;
     let etc = "/etc/".to_string() + file;
 
-    let _ = File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&tmp)
-        .context("Failed to create temp backing of an etc file")?;
+    {
+        let mut file = File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .context("Failed to create temp backing of an etc file")?;
+
+        if let Some(content) = contents {
+            file.write_all(content.as_bytes())
+                .context("Failed to write tmp backing of etc")?;
+        }
+    }
 
     let fd = open_tree(
         CWD,
@@ -127,7 +134,7 @@ pub fn mount_filesystems() -> Result<()> {
         println!("Failed to mount FEX rootfs, carrying on without.")
     }
 
-    place_etc("resolv.conf")?;
+    place_etc("resolv.conf", None)?;
 
     mount2(
         Some("binfmt_misc"),
