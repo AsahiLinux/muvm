@@ -92,6 +92,34 @@ fn mount_fex_rootfs() -> Result<()> {
     Ok(())
 }
 
+pub fn place_etc(file: &str) -> Result<()> {
+    let tmp = "/tmp/".to_string() + file;
+    let etc = "/etc/".to_string() + file;
+
+    let _ = File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&tmp)
+        .context("Failed to create temp backing of an etc file")?;
+
+    let fd = open_tree(
+        CWD,
+        &tmp,
+        OpenTreeFlags::OPEN_TREE_CLONE | OpenTreeFlags::OPEN_TREE_CLOEXEC,
+    )
+    .context("Failed to open_tree tmp")?;
+
+    move_mount(
+        fd.as_fd(),
+        "",
+        CWD,
+        etc,
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+    )
+    .context("Failed to move_mount tmp to etc")
+}
+
 pub fn mount_filesystems() -> Result<()> {
     make_tmpfs("/var/run")?;
 
@@ -99,30 +127,7 @@ pub fn mount_filesystems() -> Result<()> {
         println!("Failed to mount FEX rootfs, carrying on without.")
     }
 
-    let _ = File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open("/tmp/resolv.conf")
-        .context("Failed to create `/tmp/resolv.conf`")?;
-
-    {
-        let fd = open_tree(
-            CWD,
-            "/tmp/resolv.conf",
-            OpenTreeFlags::OPEN_TREE_CLONE | OpenTreeFlags::OPEN_TREE_CLOEXEC,
-        )
-        .context("Failed to open_tree `/tmp/resolv.conf`")?;
-
-        move_mount(
-            fd.as_fd(),
-            "",
-            CWD,
-            "/etc/resolv.conf",
-            MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
-        )
-        .context("Failed to move_mount `/etc/resolv.conf`")?;
-    }
+    place_etc("resolv.conf")?;
 
     mount2(
         Some("binfmt_misc"),
