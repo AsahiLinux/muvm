@@ -24,7 +24,7 @@ pub fn configure_network() -> Result<()> {
 
     {
         let hostname =
-            fs::read_to_string("/etc/hostname").context("Failed to read `/etc/hostname`")?;
+            fs::read_to_string("/etc/hostname").unwrap_or("placeholder-hostname".to_string());
         let hostname = if let Some((hostname, _)) = hostname.split_once('\n') {
             hostname.to_owned()
         } else {
