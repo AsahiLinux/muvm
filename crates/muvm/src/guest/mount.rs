@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use std::fs::{exists, read_dir, File};
+use std::fs::{read_dir, File};
 use std::io::Write;
 use std::os::fd::AsFd;
 use std::path::Path;
@@ -135,22 +135,6 @@ pub fn mount_filesystems() -> Result<()> {
     }
 
     place_etc("resolv.conf", None)?;
-
-    // Due to a FAR integration bug, GNOME installs may not have /etc/hostname. Somehow the system
-    // mostly works like that? But Steam install depends on this file. If there's no hostname set
-    // in the host, at least make up a hostname for the guest so the Steam install works in the
-    // guest.
-    //
-    // This is a hot fix but doesn't have any real drawbacks as a bit of robustness against broken
-    // host installs.
-    //
-    // FAR bug: https://pagure.io/fedora-asahi/remix-bugs/issue/11
-    //
-    // (Although even after that's closed, we won't be able to drop this for a while because
-    // existing installs may be affected.)
-    if !exists("/etc/hostname")? {
-        place_etc("hostname", Some("placeholder-hostname"))?;
-    }
 
     mount2(
         Some("binfmt_misc"),
