@@ -52,7 +52,7 @@ Available options:
 
 ## Running graphical applications
 
-If [sommelier](https://chromium.googlesource.com/chromiumos/platform2/+/master/vm_tools/sommelier) is installed in your system, `muvm` will use it to connect to the Wayland session on the hosts, allowing you to run graphical applications in the microVM.
+If [sommelier](https://chromium.googlesource.com/chromiumos/platform2/+/main/vm_tools/sommelier) is installed in your system, `muvm` will use it to connect to the Wayland session on the hosts, allowing you to run graphical applications in the microVM.
 
 GPU acceleration is also enabled on systems supporting [DRM native context](https://indico.freedesktop.org/event/2/contributions/53/attachments/76/121/XDC2022_%20virtgpu%20drm%20native%20context.pdf) (freedreno, amdgpu, asahi).
 
