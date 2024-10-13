@@ -122,7 +122,7 @@ pub fn place_etc(file: &str, contents: Option<&str>) -> Result<()> {
         "",
         CWD,
         etc,
-        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH,
+        MoveMountFlags::MOVE_MOUNT_F_EMPTY_PATH | MoveMountFlags::MOVE_MOUNT_T_SYMLINKS,
     )
     .context("Failed to move_mount tmp to etc")
 }
