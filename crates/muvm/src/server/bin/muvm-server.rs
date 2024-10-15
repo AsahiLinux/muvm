@@ -1,6 +1,7 @@
+use std::env;
 use std::os::unix::process::ExitStatusExt as _;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::error;
 use muvm::server::cli_options::options;
 use muvm::server::worker::{State, Worker};
@@ -9,18 +10,27 @@ use tokio::process::Command;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt as _;
+use uuid::Uuid;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let cookie = env::var("MUVM_SERVER_COOKIE")
+        .with_context(|| "Could find server cookie as an environment variable")?;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { tokio_main(cookie).await })
+}
+
+async fn tokio_main(cookie: String) -> Result<()> {
     env_logger::init();
 
     let options = options().run();
+    let cookie = Uuid::try_parse(&cookie).context("Couldn't parse cookie as UUID v7")?;
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", options.server_port)).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
-        let mut worker = Worker::new(listener, state_tx);
+        let mut worker = Worker::new(cookie, listener, state_tx);
         worker.run().await;
     });
     let command_status = Command::new(&options.command)

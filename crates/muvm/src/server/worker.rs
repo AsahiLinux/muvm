@@ -13,12 +13,14 @@ use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt as _;
+use uuid::Uuid;
 
 use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
 
 #[derive(Debug)]
 pub struct Worker {
+    cookie: Uuid,
     listener_stream: TcpListenerStream,
     state_tx: watch::Sender<State>,
     child_set: JoinSet<(PathBuf, ChildResult)>,
@@ -33,8 +35,9 @@ pub struct State {
 type ChildResult = Result<ExitStatus, io::Error>;
 
 impl Worker {
-    pub fn new(listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
+    pub fn new(cookie: Uuid, listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
         Worker {
+            cookie,
             listener_stream: TcpListenerStream::new(listener),
             state_tx,
             child_set: JoinSet::new(),
@@ -56,7 +59,7 @@ impl Worker {
                     };
                     let stream = BufStream::new(stream);
 
-                    match handle_connection(stream).await {
+                    match handle_connection(self.cookie, stream).await {
                         Ok((command, mut child)) => {
                             self.child_set.spawn(async move { (command, child.wait().await) });
                             self.set_child_processes(self.child_set.len());
@@ -158,15 +161,27 @@ async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
     }
 }
 
-async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf, Child)> {
+async fn handle_connection(
+    server_cookie: Uuid,
+    mut stream: BufStream<TcpStream>,
+) -> Result<(PathBuf, Child)> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
     let Launch {
+        cookie,
         command,
         command_args,
         env,
     } = read_request(&mut stream).await?;
     debug!(command:?, command_args:?, env:?; "received launch request");
+    if cookie != server_cookie {
+        debug!("invalid cookie in launch request");
+        let msg = "Invalid cookie";
+        stream.write_all(msg.as_bytes()).await.ok();
+        stream.flush().await.ok();
+        return Err(anyhow!(msg));
+    }
+
     envs.extend(env);
 
     let (stdout, stderr) = make_stdout_stderr(&command, &envs)?;
