@@ -16,6 +16,7 @@ use muvm::cli_options::options;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::launch::{launch_or_lock, LaunchResult};
+use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
 use nix::sys::sysinfo::sysinfo;
@@ -434,6 +435,8 @@ fn main() -> Result<()> {
             return Err(err).context("Failed to set the environment variables in the guest");
         }
     }
+
+    spawn_monitor(options.root_server_port, cookie);
 
     {
         // Start and enter the microVM. Unless there is some error while creating the

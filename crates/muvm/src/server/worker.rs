@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::os::unix::process::ExitStatusExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 use std::{env, io};
 
@@ -17,6 +19,11 @@ use uuid::Uuid;
 
 use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
+
+pub enum ConnRequest {
+    DropCaches,
+    ExecuteCommand { command: PathBuf, child: Child },
+}
 
 #[derive(Debug)]
 pub struct Worker {
@@ -60,9 +67,12 @@ impl Worker {
                     let stream = BufStream::new(stream);
 
                     match handle_connection(self.cookie, stream).await {
-                        Ok((command, mut child)) => {
-                            self.child_set.spawn(async move { (command, child.wait().await) });
-                            self.set_child_processes(self.child_set.len());
+                        Ok(request) => match request {
+                            ConnRequest::DropCaches => {},
+                            ConnRequest::ExecuteCommand {command, mut child } => {
+                                self.child_set.spawn(async move { (command, child.wait().await) });
+                                self.set_child_processes(self.child_set.len());
+                            }
                         },
                         Err(err) => {
                             eprintln!("Failed to process client request: {err:?}");
@@ -164,7 +174,7 @@ async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
 async fn handle_connection(
     server_cookie: Uuid,
     mut stream: BufStream<TcpStream>,
-) -> Result<(PathBuf, Child)> {
+) -> Result<ConnRequest> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
     let Launch {
@@ -180,6 +190,21 @@ async fn handle_connection(
         stream.write_all(msg.as_bytes()).await.ok();
         stream.flush().await.ok();
         return Err(anyhow!(msg));
+    }
+
+    if command == Path::new("/muvmdropcaches") {
+        let mut file = File::options()
+            .write(true)
+            .open("/proc/sys/vm/drop_caches")
+            .context("Failed to open /proc/sys/vm/drop_caches for writing")?;
+
+        {
+            file.write_all(b"1")
+                .context("Failed to write to /proc/sys/vm/drop_caches")?;
+        }
+        stream.write_all(b"OK").await.ok();
+        stream.flush().await.ok();
+        return Ok(ConnRequest::DropCaches);
     }
 
     envs.extend(env);
@@ -202,5 +227,5 @@ async fn handle_connection(
     }
     stream.flush().await.ok();
 
-    res.map(|child| (command, child))
+    res.map(|child| ConnRequest::ExecuteCommand { command, child })
 }
