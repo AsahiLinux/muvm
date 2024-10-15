@@ -23,6 +23,7 @@ tempfile = { version = "3.10.1", default-features = false, features = [] }
 tokio = { version = "1.38.0", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1.15", default-features = false, features = ["net", "sync"] }
 uuid = { version = "1.10.0", default-features = false, features = ["std", "v7"] }
+xdg = "2.5.2"
 
 [features]
 default = []
