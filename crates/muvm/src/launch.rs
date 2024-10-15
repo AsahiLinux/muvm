@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
-use rustix::path::Arg;
+use uuid::Uuid;
 
 use crate::env::prepare_env_vars;
 use crate::utils::launch::Launch;
@@ -17,6 +17,7 @@ use crate::utils::launch::Launch;
 pub enum LaunchResult {
     LaunchRequested,
     LockAcquired {
+        cookie: Uuid,
         lock_file: File,
         command: PathBuf,
         command_args: Vec<String>,
@@ -59,53 +60,63 @@ pub fn launch_or_lock(
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
         let env = prepare_env_vars(env)?;
-        if let Err(err) = request_launch(port, command, command_args, env) {
+        let cookie = read_cookie()?;
+        if let Err(err) = request_launch(port, cookie, command, command_args, env) {
             return Err(anyhow!("could not request launch to server: {err}"));
         }
         return Ok(LaunchResult::LaunchRequested);
     }
 
-    let (lock_file, running_server_port) = lock_file(server_port)?;
+    let (lock_file, cookie) = lock_file()?;
     match lock_file {
         Some(lock_file) => Ok(LaunchResult::LockAcquired {
+            cookie,
             lock_file,
             command,
             command_args,
             env,
         }),
         None => {
-            if let Some(port) = running_server_port {
-                let env = prepare_env_vars(env)?;
-                let mut tries = 0;
-                loop {
-                    match request_launch(port, command.clone(), command_args.clone(), env.clone()) {
-                        Err(err) => match err.downcast_ref::<LaunchError>() {
-                            Some(&LaunchError::Connection(_)) => {
-                                if tries == 3 {
-                                    return Err(anyhow!(
-                                        "could not request launch to server: {err}"
-                                    ));
-                                } else {
-                                    tries += 1;
-                                }
-                            },
-                            _ => {
+            let env = prepare_env_vars(env)?;
+            let mut tries = 0;
+            loop {
+                match request_launch(
+                    server_port,
+                    cookie,
+                    command.clone(),
+                    command_args.clone(),
+                    env.clone(),
+                ) {
+                    Err(err) => match err.downcast_ref::<LaunchError>() {
+                        Some(&LaunchError::Connection(_)) => {
+                            if tries == 3 {
                                 return Err(anyhow!("could not request launch to server: {err}"));
-                            },
+                            } else {
+                                tries += 1;
+                            }
                         },
-                        Ok(_) => return Ok(LaunchResult::LaunchRequested),
-                    }
+                        _ => {
+                            return Err(anyhow!("could not request launch to server: {err}"));
+                        },
+                    },
+                    Ok(_) => return Ok(LaunchResult::LaunchRequested),
                 }
-            } else {
-                Err(anyhow!(
-                    "muvm is already running but couldn't find its server port, bailing out"
-                ))
             }
         },
     }
 }
 
-fn lock_file(server_port: u32) -> Result<(Option<File>, Option<u32>)> {
+fn read_cookie() -> Result<Uuid> {
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
+    let lock_path = Path::new(&run_path).join("muvm.lock");
+    let data: Vec<u8> = fs::read(lock_path).context("Failed to read lock file")?;
+    assert!(data.len() == 16);
+
+    Uuid::from_slice(&data).context("Failed to read cookie from lock file")
+}
+
+fn lock_file() -> Result<(Option<File>, Uuid)> {
     let run_path = env::var("XDG_RUNTIME_DIR")
         .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
     let lock_path = Path::new(&run_path).join("muvm.lock");
@@ -123,30 +134,23 @@ fn lock_file(server_port: u32) -> Result<(Option<File>, Option<u32>)> {
             .context("Failed to create lock file")?;
         let ret = flock(&lock_file, FlockOperation::NonBlockingLockExclusive);
         if ret.is_err() {
-            let mut data: Vec<u8> = Vec::with_capacity(5);
+            let mut data: Vec<u8> = Vec::with_capacity(16);
             lock_file.read_to_end(&mut data)?;
-            let port = match data.to_string_lossy().parse::<u32>() {
-                Ok(port) => {
-                    if port > 1024 {
-                        Some(port)
-                    } else {
-                        None
-                    }
-                },
-                Err(_) => None,
-            };
-            return Ok((None, port));
+            let cookie = Uuid::from_slice(&data).context("Failed to read cookie from lock file")?;
+            return Ok((None, cookie));
         }
         lock_file
     };
 
+    let cookie = Uuid::now_v7();
     lock_file.set_len(0)?;
-    lock_file.write_all(format!("{server_port}").as_bytes())?;
-    Ok((Some(lock_file), None))
+    lock_file.write_all(cookie.as_bytes())?;
+    Ok((Some(lock_file), cookie))
 }
 
 fn request_launch(
     server_port: u32,
+    cookie: Uuid,
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
@@ -155,6 +159,7 @@ fn request_launch(
         TcpStream::connect(format!("127.0.0.1:{server_port}")).map_err(LaunchError::Connection)?;
 
     let launch = Launch {
+        cookie,
         command,
         command_args,
         env,

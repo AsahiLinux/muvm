@@ -67,7 +67,7 @@ fn main() -> Result<()> {
 
     let options = options().fallback_to_usage().run();
 
-    let (_lock_file, command, command_args, env) = match launch_or_lock(
+    let (cookie, _lock_file, command, command_args, env) = match launch_or_lock(
         options.server_port,
         options.command,
         options.command_args,
@@ -79,11 +79,12 @@ fn main() -> Result<()> {
             return Ok(());
         },
         LaunchResult::LockAcquired {
+            cookie,
             lock_file,
             command,
             command_args,
             env,
-        } => (lock_file, command, command_args, env),
+        } => (cookie, lock_file, command, command_args, env),
     };
 
     {
@@ -374,6 +375,7 @@ fn main() -> Result<()> {
         "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
     );
+    env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
     if options.direct_x11 {
         let display =
