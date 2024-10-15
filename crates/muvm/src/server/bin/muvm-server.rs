@@ -1,10 +1,12 @@
 use std::env;
 use std::os::unix::process::ExitStatusExt as _;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use log::error;
 use muvm::server::cli_options::options;
 use muvm::server::worker::{State, Worker};
+use nix::unistd::geteuid;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -23,19 +25,33 @@ fn main() -> Result<()> {
 async fn tokio_main(cookie: String) -> Result<()> {
     env_logger::init();
 
-    let options = options().run();
     let cookie = Uuid::try_parse(&cookie).context("Couldn't parse cookie as UUID v7")?;
+    let uid: u32 = geteuid().into();
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", options.server_port)).await?;
+    let (server_port, command, command_args) = if uid == 0 {
+        let server_port = if let Ok(server_port) = env::var("MUVM_ROOT_SERVER_PORT") {
+            server_port.parse()?
+        } else {
+            3335
+        };
+        (
+            server_port,
+            PathBuf::from("/bin/sleep"),
+            vec!["inf".to_string()],
+        )
+    } else {
+        let options = options().run();
+        (options.server_port, options.command, options.command_args)
+    };
+
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", server_port)).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
         let mut worker = Worker::new(cookie, listener, state_tx);
         worker.run().await;
     });
-    let command_status = Command::new(&options.command)
-        .args(options.command_args)
-        .status();
+    let command_status = Command::new(&command).args(command_args).status();
     tokio::pin!(command_status);
     let mut state_rx = WatchStream::new(state_rx);
 
@@ -63,12 +79,12 @@ async fn tokio_main(cookie: String) -> Result<()> {
                             if let Some(code) = status.code() {
                                 eprintln!(
                                     "{:?} process exited with status code: {code}",
-                                    options.command
+                                    command
                                 );
                             } else {
                                 eprintln!(
                                     "{:?} process terminated by signal: {}",
-                                    options.command,
+                                    command,
                                     status
                                         .signal()
                                         .expect("either one of status code or signal should be set")
@@ -79,7 +95,7 @@ async fn tokio_main(cookie: String) -> Result<()> {
                     Err(err) => {
                         eprintln!(
                             "Failed to execute {:?} as child process: {err}",
-                            options.command
+                            command
                         );
                     },
                 }
