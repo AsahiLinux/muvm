@@ -62,6 +62,12 @@ fn main() -> Result<()> {
             .spawn()?;
     }
 
+    // Before switching to the user, start another instance of muvm-server to serve
+    // launch requests as root.
+    Command::new("muvm-server")
+        .spawn()
+        .context("Failed to execute `muvm-server` as child process")?;
+
     let run_path = match setup_user(options.username, options.uid, options.gid) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),

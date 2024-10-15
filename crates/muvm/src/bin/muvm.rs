@@ -254,7 +254,7 @@ fn main() -> Result<()> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port)
+            start_passt(options.server_port, options.root_server_port)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -374,6 +374,10 @@ fn main() -> Result<()> {
     env.insert(
         "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
+    );
+    env.insert(
+        "MUVM_ROOT_SERVER_PORT".to_owned(),
+        options.root_server_port.to_string(),
     );
     env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 

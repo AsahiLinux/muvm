@@ -13,6 +13,7 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
+    pub root_server_port: u32,
     pub server_port: u32,
     pub fex_images: Vec<String>,
     pub direct_x11: bool,
@@ -93,6 +94,12 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
+    let root_server_port = long("root-server-port")
+        .short('r')
+        .help("Set the port to be used in root server mode")
+        .argument("ROOT_SERVER_PORT")
+        .fallback(3335)
+        .display_fallback();
     let server_port = long("server-port")
         .short('p')
         .help("Set the port to be used in server mode")
@@ -117,6 +124,7 @@ pub fn options() -> OptionParser<Options> {
         mem,
         vram,
         passt_socket,
+        root_server_port,
         server_port,
         fex_images,
         direct_x11,
