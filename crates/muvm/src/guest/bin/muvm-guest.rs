@@ -1,4 +1,5 @@
 use std::cmp;
+use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 
@@ -38,6 +39,17 @@ fn main() -> Result<()> {
     if let Err(err) = mount_filesystems() {
         return Err(err).context("Failed to mount filesystems, bailing out");
     }
+
+    // Use the correct TTY, which fixes pty issues etc. (/dev/console cannot be a controlling tty)
+    let console = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(false)
+        .open("/dev/hvc0")?;
+    rustix::stdio::dup2_stdin(console.as_fd())?;
+    rustix::stdio::dup2_stdout(console.as_fd())?;
+    rustix::stdio::dup2_stderr(console.as_fd())?;
+
     Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
 
     setup_fex()?;
