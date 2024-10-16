@@ -1,4 +1,5 @@
 use std::cmp;
+use std::env;
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 
@@ -13,6 +14,7 @@ use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
 use muvm::utils::env::find_in_path;
+use nix::unistd::User;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
@@ -40,6 +42,18 @@ fn main() -> Result<()> {
     }
     Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
 
+    let user = User::from_uid(options.uid)?.unwrap();
+
+    // Hack to fetch the XDG directories for our target user, before we
+    // change uid.
+    // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
+    // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
+    env::set_var("HOME", user.dir);
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("muvm")?;
+    // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
+    // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
+    env::remove_var("HOME");
+
     setup_fex()?;
 
     configure_network()?;
@@ -48,6 +62,14 @@ fn main() -> Result<()> {
         Command::new(hidpipe_client_path)
             .arg(format!("{}", options.uid))
             .spawn()?;
+    }
+
+    for init_file in xdg_dirs.find_data_files("init.sh") {
+        Command::new(init_file)
+            .arg(format!("{}", options.uid))
+            .arg(format!("{}", options.gid))
+            .status()
+            .context("Failed to execute init.sh")?;
     }
 
     let run_path = match setup_user(options.username, options.uid, options.gid) {
@@ -62,6 +84,13 @@ fn main() -> Result<()> {
     setup_socket_proxy(pulse_path, 3333)?;
 
     setup_x11_forwarding(run_path)?;
+
+    for init_file in xdg_dirs.find_data_files("user.sh") {
+        eprintln!("{:?}", init_file);
+        Command::new(init_file)
+            .status()
+            .context("Failed to execute user.sh")?;
+    }
 
     // Will not return if successful.
     exec_sommelier(&options.command, &options.command_args)
