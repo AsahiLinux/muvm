@@ -74,6 +74,10 @@ fn mount_fex_rootfs() -> Result<()> {
     } else if images.len() == 1 {
         // Just expose the one mount
         symlink(&images[0], &dir_rootfs)?;
+    } else if images.is_empty() {
+        // If no images were passed, FEX is either managed by the host os
+        // or is not installed at all. Avoid clobbering the config in that case.
+        return Ok(());
     }
 
     // Now we need to tell FEX about this. One of the FEX share directories has an unmounted rootfs
