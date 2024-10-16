@@ -7,7 +7,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rustix::fs::{mkdir, symlink, Mode, CWD};
 use rustix::mount::{
-    mount2, mount_bind, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags,
+    mount2, mount_bind, move_mount, open_tree, unmount, MountFlags, MoveMountFlags, OpenTreeFlags,
+    UnmountFlags,
 };
 
 fn make_tmpfs(dir: &str) -> Result<()> {
@@ -158,6 +159,22 @@ pub fn mount_filesystems() -> Result<()> {
         // Mount a tmpfs for X11 sockets, so the guest doesn't clobber host X server
         // sockets
         make_tmpfs("/tmp/.X11-unix")?;
+    }
+
+    // Check for DAX active on the root filesystem (first line of /proc/mounts should be the root FS)
+    let has_dax = std::fs::read_to_string("/proc/mounts")?
+        .lines()
+        .next()
+        .map(|a| a.contains("dax=always"))
+        .unwrap_or(false);
+
+    // If we have DAX, set up shared /dev/shm
+    if has_dax {
+        // Unmount the /dev/shm that was set up for us by libkrun
+        unmount("/dev/shm", UnmountFlags::empty()).context("Failed to unmount /dev/shm")?;
+        // Bind-mount /dev/shm to the target
+        mount_bind(host_path.join("dev/shm"), "/dev/shm")
+            .context("Failed to bind-mount /dev/shm from the host")?;
     }
 
     Ok(())
