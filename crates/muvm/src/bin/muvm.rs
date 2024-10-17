@@ -16,6 +16,7 @@ use muvm::cli_options::options;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::launch::{launch_or_lock, LaunchResult};
+use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
 use nix::sys::sysinfo::sysinfo;
@@ -67,7 +68,7 @@ fn main() -> Result<()> {
 
     let options = options().fallback_to_usage().run();
 
-    let (_lock_file, command, command_args, env) = match launch_or_lock(
+    let (cookie, _lock_file, command, command_args, env) = match launch_or_lock(
         options.server_port,
         options.command,
         options.command_args,
@@ -79,11 +80,12 @@ fn main() -> Result<()> {
             return Ok(());
         },
         LaunchResult::LockAcquired {
+            cookie,
             lock_file,
             command,
             command_args,
             env,
-        } => (lock_file, command, command_args, env),
+        } => (cookie, lock_file, command, command_args, env),
     };
 
     {
@@ -239,7 +241,7 @@ fn main() -> Result<()> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port)
+            start_passt(options.server_port, options.root_server_port)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -360,6 +362,11 @@ fn main() -> Result<()> {
         "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
     );
+    env.insert(
+        "MUVM_ROOT_SERVER_PORT".to_owned(),
+        options.root_server_port.to_string(),
+    );
+    env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
     let mut krun_config = KrunConfig {
         args: Vec::new(),
@@ -402,6 +409,8 @@ fn main() -> Result<()> {
             return Err(err).context("Failed to set the environment variables in the guest");
         }
     }
+
+    spawn_monitor(options.root_server_port, cookie);
 
     {
         // Start and enter the microVM. Unless there is some error while creating the

@@ -16,13 +16,14 @@ env_logger = { version = "0.11.3", default-features = false, features = ["auto-c
 krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
 log = { version = "0.4.21", default-features = false, features = ["kv"] }
 nix = { version = "0.28.0", default-features = false, features = ["user"] }
+procfs = { version = "0.17.0", default-features = false, features = [] }
 rustix = { version = "0.38.34", default-features = false, features = ["fs", "mount", "process", "std", "system", "use-libc-auxv"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.117", default-features = false, features = ["std"] }
 tempfile = { version = "3.10.1", default-features = false, features = [] }
 tokio = { version = "1.38.0", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1.15", default-features = false, features = ["net", "sync"] }
-uuid = { version = "1.10.0", default-features = false, features = ["std", "v7"] }
+uuid = { version = "1.10.0", default-features = false, features = ["serde", "std", "v7"] }
 
 [features]
 default = []
