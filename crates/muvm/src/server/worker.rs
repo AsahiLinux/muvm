@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
@@ -13,12 +15,19 @@ use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt as _;
+use uuid::Uuid;
 
 use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
 
+pub enum ConnRequest {
+    DropCaches,
+    ExecuteCommand { command: PathBuf, child: Child },
+}
+
 #[derive(Debug)]
 pub struct Worker {
+    cookie: Uuid,
     listener_stream: TcpListenerStream,
     state_tx: watch::Sender<State>,
     child_set: JoinSet<(PathBuf, ChildResult)>,
@@ -33,8 +42,9 @@ pub struct State {
 type ChildResult = Result<ExitStatus, io::Error>;
 
 impl Worker {
-    pub fn new(listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
+    pub fn new(cookie: Uuid, listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
         Worker {
+            cookie,
             listener_stream: TcpListenerStream::new(listener),
             state_tx,
             child_set: JoinSet::new(),
@@ -56,10 +66,13 @@ impl Worker {
                     };
                     let stream = BufStream::new(stream);
 
-                    match handle_connection(stream).await {
-                        Ok((command, mut child)) => {
-                            self.child_set.spawn(async move { (command, child.wait().await) });
-                            self.set_child_processes(self.child_set.len());
+                    match handle_connection(self.cookie, stream).await {
+                        Ok(request) => match request {
+                            ConnRequest::DropCaches => {},
+                            ConnRequest::ExecuteCommand {command, mut child } => {
+                                self.child_set.spawn(async move { (command, child.wait().await) });
+                                self.set_child_processes(self.child_set.len());
+                            }
                         },
                         Err(err) => {
                             eprintln!("Failed to process client request: {err:?}");
@@ -158,15 +171,42 @@ async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
     }
 }
 
-async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf, Child)> {
+async fn handle_connection(
+    server_cookie: Uuid,
+    mut stream: BufStream<TcpStream>,
+) -> Result<ConnRequest> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
     let Launch {
+        cookie,
         command,
         command_args,
         env,
     } = read_request(&mut stream).await?;
     debug!(command:?, command_args:?, env:?; "received launch request");
+    if cookie != server_cookie {
+        debug!("invalid cookie in launch request");
+        let msg = "Invalid cookie";
+        stream.write_all(msg.as_bytes()).await.ok();
+        stream.flush().await.ok();
+        return Err(anyhow!(msg));
+    }
+
+    if command.to_string_lossy().contains("/muvmdropcaches") {
+        let mut file = File::options()
+            .write(true)
+            .open("/proc/sys/vm/drop_caches")
+            .context("Failed to open /proc/sys/vm/drop_caches for writing")?;
+
+        {
+            file.write_all(b"1")
+                .context("Failed to write to /proc/sys/vm/drop_caches")?;
+        }
+        stream.write_all(b"OK").await.ok();
+        stream.flush().await.ok();
+        return Ok(ConnRequest::DropCaches);
+    }
+
     envs.extend(env);
 
     let (stdout, stderr) = make_stdout_stderr(&command, &envs)?;
@@ -187,5 +227,5 @@ async fn handle_connection(mut stream: BufStream<TcpStream>) -> Result<(PathBuf,
     }
     stream.flush().await.ok();
 
-    res.map(|child| (command, child))
+    res.map(|child| ConnRequest::ExecuteCommand { command, child })
 }
