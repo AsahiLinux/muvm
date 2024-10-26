@@ -21,7 +21,7 @@ where
         Err(_) => return Ok(()),
     };
 
-    if !host_display.starts_with(":") {
+    if !host_display.starts_with(':') {
         return Err(anyhow!("Invalid host DISPLAY"));
     }
     let host_display = &host_display[1..];
