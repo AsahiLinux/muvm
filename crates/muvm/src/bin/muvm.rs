@@ -6,10 +6,10 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
-    krun_add_disk, krun_add_vsock_port, krun_create_ctx, krun_set_env, krun_set_gpu_options2,
-    krun_set_log_level, krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir,
-    krun_start_enter, VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC,
-    VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
+    krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_create_ctx, krun_set_env,
+    krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
+    krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
+    VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
 use muvm::cli_options::options;
@@ -230,6 +230,20 @@ fn main() -> Result<()> {
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure root path");
+        }
+
+        // SAFETY: `c_path` and `c_path` are pointers to C-string literals.
+        let err = unsafe {
+            krun_add_virtiofs2(
+                ctx_id,
+                c"devshm".as_ptr(),
+                c"/dev/shm/".as_ptr(),
+                1u64 << 29, // 512MiB should be enough for /dev/shm
+            )
+        };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure /dev/shm filesystem");
         }
     }
 

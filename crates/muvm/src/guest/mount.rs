@@ -7,7 +7,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rustix::fs::{mkdir, symlink, Mode, CWD};
 use rustix::mount::{
-    mount2, mount_bind, move_mount, open_tree, MountFlags, MoveMountFlags, OpenTreeFlags,
+    mount2, mount_bind, move_mount, open_tree, unmount, MountFlags, MoveMountFlags, OpenTreeFlags,
+    UnmountFlags,
 };
 
 fn make_tmpfs(dir: &str) -> Result<()> {
@@ -159,6 +160,18 @@ pub fn mount_filesystems() -> Result<()> {
         // sockets
         make_tmpfs("/tmp/.X11-unix")?;
     }
+
+    // Mount /dev/shm separately with DAX enabled, to allow cross-domain shared memory
+    // /dev/shm is mounted by libkrunfw, so unmount it first
+    unmount("/dev/shm", UnmountFlags::empty()).context("Failed to unmount /dev/shm")?;
+    mount2(
+        Some("devshm"),
+        "/dev/shm",
+        Some("virtiofs"),
+        MountFlags::NOEXEC | MountFlags::NOSUID,
+        Some(c"dax"),
+    )
+    .context("Failed to mount `/dev/shm`")?;
 
     Ok(())
 }
