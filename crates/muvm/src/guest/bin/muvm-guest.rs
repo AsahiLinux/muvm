@@ -61,13 +61,13 @@ fn main() -> Result<()> {
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, 3333)?;
 
-    setup_x11_forwarding(run_path)?;
+    if !setup_x11_forwarding(run_path)? {
+        // Will not return if successful.
+        exec_sommelier(&options.command, &options.command_args)
+            .context("Failed to execute sommelier")?;
+    }
 
-    // Will not return if successful.
-    exec_sommelier(&options.command, &options.command_args)
-        .context("Failed to execute sommelier")?;
-
-    // Fallback option if sommelier is not present.
+    // Fallback option if sommelier is not present or for direct X11 mode.
     debug!(command:? = options.command, command_args:? = options.command_args; "exec");
     let err = Command::new(&options.command)
         .args(options.command_args)

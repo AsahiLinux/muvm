@@ -15,6 +15,7 @@ pub struct Options {
     pub passt_socket: Option<PathBuf>,
     pub server_port: u32,
     pub fex_images: Vec<String>,
+    pub direct_x11: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -98,6 +99,11 @@ pub fn options() -> OptionParser<Options> {
         .argument("SERVER_PORT")
         .fallback(3334)
         .display_fallback();
+    let direct_x11 = long("direct-x11")
+        .short('x')
+        .help("Use direct X11 forwarding instead of sommelier + XWayland")
+        .switch();
+
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -113,6 +119,7 @@ pub fn options() -> OptionParser<Options> {
         passt_socket,
         server_port,
         fex_images,
+        direct_x11,
         // positionals
         command,
         command_args,
