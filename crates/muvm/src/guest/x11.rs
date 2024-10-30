@@ -11,14 +11,14 @@ use super::socket::setup_socket_proxy;
 
 use crate::utils::env::find_in_path;
 
-pub fn setup_x11_forwarding<P>(run_path: P) -> Result<()>
+pub fn setup_x11_forwarding<P>(run_path: P) -> Result<bool>
 where
     P: AsRef<Path>,
 {
     // Set by muvm if DISPLAY was provided from the host.
     let host_display = match env::var("HOST_DISPLAY") {
         Ok(d) => d,
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(false),
     };
 
     if !host_display.starts_with(':') {
@@ -35,14 +35,14 @@ where
 
         cmd.spawn().context("Failed to spawn `x112virtgpu`")?;
     } else {
+        log::error!("x112virtgpu not available, X11 forwarding will operate in socket forwarding mode. This is probably not what you want.");
         setup_socket_proxy(Path::new("/tmp/.X11-unix/X1"), 6000)?;
     }
 
-    // Set HOST_DISPLAY to :1, which is the display number within the guest
-    // at which the actual host display is accessible.
     // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
-    env::set_var("HOST_DISPLAY", ":1");
+    env::set_var("DISPLAY", ":1");
+    env::set_var("XSHMFENCE_NO_MEMFD", "1");
 
     if let Ok(xauthority) = std::env::var("XAUTHORITY") {
         let src_path = format!("/run/muvm-host/{}", xauthority);
@@ -100,5 +100,5 @@ where
         env::set_var("XAUTHORITY", dst_path);
     }
 
-    Ok(())
+    Ok(true)
 }

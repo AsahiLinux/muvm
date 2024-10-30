@@ -375,6 +375,18 @@ fn main() -> Result<()> {
         options.server_port.to_string(),
     );
 
+    if options.direct_x11 {
+        let display =
+            env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
+        env.insert("HOST_DISPLAY".to_string(), display);
+
+        // And forward XAUTHORITY. This will be modified to fix the
+        // display name in muvm-guest.
+        if let Ok(xauthority) = env::var("XAUTHORITY") {
+            env.insert("XAUTHORITY".to_string(), xauthority);
+        }
+    }
+
     let mut krun_config = KrunConfig {
         args: Vec::new(),
         envs: Vec::new(),
