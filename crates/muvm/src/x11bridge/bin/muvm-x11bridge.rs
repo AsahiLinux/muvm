@@ -639,12 +639,15 @@ impl Drop for FutexWatcherThread {
     }
 }
 
+#[allow(dead_code)]
 struct RemoteCaller {
     pid: Pid,
     regs: user_regs_struct,
 }
 
 impl RemoteCaller {
+    // This is arch-specific, so gate it off of x86_64 builds done for CI purposes
+    #[cfg(target_arch = "aarch64")]
     fn with<R, F>(pid: Pid, f: F) -> Result<R>
     where
         F: FnOnce(&RemoteCaller) -> Result<R>,
@@ -710,6 +713,9 @@ impl RemoteCaller {
         )
         .map(|x| x as i32)
     }
+
+    // This is arch-specific, so gate it off of x86_64 builds done for CI purposes
+    #[cfg(target_arch = "aarch64")]
     fn syscall(&self, syscall_no: c_long, args: [c_ulonglong; 6]) -> Result<c_ulonglong> {
         let mut regs = self.regs;
         regs.regs[..6].copy_from_slice(&args);
@@ -722,6 +728,18 @@ impl RemoteCaller {
         }
         regs = ptrace::getregs(self.pid)?;
         Ok(regs.regs[0])
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    fn with<R, F>(_pid: Pid, _f: F) -> Result<R>
+    where
+        F: FnOnce(&RemoteCaller) -> Result<R>,
+    {
+        Err(Errno::EOPNOTSUPP.into())
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    fn syscall(&self, _syscall_no: c_long, _args: [c_ulonglong; 6]) -> Result<c_ulonglong> {
+        Err(Errno::EOPNOTSUPP.into())
     }
 }
 
@@ -1178,6 +1196,8 @@ impl Client {
         // Allow everything in /dev/shm (including paths with trailing '(deleted)')
         let shmem_file = if filename.starts_with(SHM_DIR) {
             File::from(memfd)
+        } else if cfg!(not(target_arch = "aarch64")) {
+            return Err(Errno::EOPNOTSUPP.into());
         } else {
             let (fd, shmem_path) = mkstemp(SHM_TEMPLATE)?;
             let mut shmem_file = unsafe { File::from_raw_fd(fd) };
