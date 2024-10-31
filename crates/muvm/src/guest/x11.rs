@@ -7,9 +7,7 @@ use std::process::Command;
 use anyhow::{anyhow, Context, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::socket::setup_socket_proxy;
-
-use crate::utils::env::find_in_path;
+use crate::env::find_muvm_exec;
 
 pub fn setup_x11_forwarding<P>(run_path: P) -> Result<bool>
 where
@@ -26,18 +24,10 @@ where
     }
     let host_display = &host_display[1..];
 
-    let x112virtgpu_path =
-        find_in_path("x112virtgpu").context("Failed to check existence of `x112virtgpu`")?;
+    let mut cmd = Command::new(find_muvm_exec("muvm-x11bridge")?);
+    cmd.args(["--listen-display", ":1"]);
 
-    if x112virtgpu_path.is_some() {
-        let mut cmd = Command::new(x112virtgpu_path.unwrap());
-        cmd.args(["--listen-display", ":1"]);
-
-        cmd.spawn().context("Failed to spawn `x112virtgpu`")?;
-    } else {
-        log::error!("x112virtgpu not available, X11 forwarding will operate in socket forwarding mode. This is probably not what you want.");
-        setup_socket_proxy(Path::new("/tmp/.X11-unix/X1"), 6000)?;
-    }
+    cmd.spawn().context("Failed to spawn `muvm-x11bridge`")?;
 
     // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
