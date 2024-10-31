@@ -15,7 +15,7 @@ byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
 env_logger = { version = "0.11.3", default-features = false, features = ["auto-color", "humantime", "unstable-kv"] }
 krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
 log = { version = "0.4.21", default-features = false, features = ["kv"] }
-nix = { version = "0.28.0", default-features = false, features = ["user"] }
+nix = { version = "0.29.0", default-features = false, features = ["user"] }
 procfs = { version = "0.17.0", default-features = false, features = [] }
 rustix = { version = "0.38.34", default-features = false, features = ["fs", "mount", "process", "std", "stdio", "system", "use-libc-auxv"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
@@ -26,7 +26,8 @@ tokio-stream = { version = "0.1.15", default-features = false, features = ["net"
 uuid = { version = "1.10.0", default-features = false, features = ["serde", "std", "v7"] }
 
 [features]
-default = []
+x11bridge = ["nix/event", "nix/fs", "nix/ioctl", "nix/mman", "nix/ptrace", "nix/signal", "nix/socket", "nix/uio"]
+default = ["x11bridge"]
 
 [[bin]]
 name = "muvm"
@@ -39,3 +40,8 @@ path = "src/guest/bin/muvm-guest.rs"
 [[bin]]
 name = "muvm-server"
 path = "src/server/bin/muvm-server.rs"
+
+[[bin]]
+name = "muvm-x11bridge"
+path = "src/x11bridge/bin/muvm-x11bridge.rs"
+required-features = ["x11bridge"]
