@@ -1094,8 +1094,18 @@ impl Client {
         Ok(tids)
     }
 
-    fn replace_futex_storage(my_fd: RawFd, pid: Pid, shmem_path: &str) -> Result<()> {
+    fn replace_futex_storage(
+        my_fd: RawFd,
+        pid: Pid,
+        shmem_path: &str,
+        shmem_file: &mut File,
+    ) -> Result<()> {
         let traced = Self::ptrace_all_threads(pid)?;
+
+        let mut data = [0; 4];
+        read(my_fd, &mut data)?;
+        shmem_file.write_all(&data)?;
+
         // TODO: match st_dev too to avoid false positives
         let my_ino = fstat(my_fd)?.st_ino;
         let mut fds_to_replace = Vec::new();
@@ -1171,15 +1181,14 @@ impl Client {
         } else {
             let (fd, shmem_path) = mkstemp(SHM_TEMPLATE)?;
             let mut shmem_file = unsafe { File::from_raw_fd(fd) };
-            let mut data = [0; 4];
-            read(memfd.as_raw_fd(), &mut data)?;
-            shmem_file.write_all(&data)?;
-            Self::replace_futex_storage(
+            let ret = Self::replace_futex_storage(
                 memfd.as_raw_fd(),
                 Pid::from_raw(pid),
                 shmem_path.as_os_str().to_str().unwrap(),
-            )?;
+                &mut shmem_file,
+            );
             remove_file(&shmem_path)?;
+            ret?;
             shmem_file
         };
 
