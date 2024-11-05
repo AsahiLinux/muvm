@@ -72,12 +72,10 @@ pub fn options() -> OptionParser<Options> {
         .optional();
     let vram = long("vram")
         .help(
-            "The amount of Video RAM, in MiB, that will be available to this microVM.
-            The memory configured for the microVM will not be reserved
-            immediately. Instead, it will be provided as the guest demands
-            it, and will be returned to the host once the guest releases
-            the underlying resources.
-    [default: same as the total amount of RAM in the system]",
+            "The amount of Video RAM, in MiB, that will reported by userspace in this microVM.
+            The userspace drivers will report this amount as heap size
+            to the clients running in the microVM.
+    [default: 50% of total RAM]",
         )
         .argument("VRAM")
         .optional();

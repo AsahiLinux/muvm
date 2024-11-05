@@ -149,12 +149,22 @@ fn main() -> Result<()> {
             };
             MiB::from(guest_ram)
         };
-        // VRAM is actually the SHM window for virtio-gpu. The userspace drivers in the
-        // guest are expected to be conservative and tell applications that the amount
-        // of VRAM is just a percentage of the guest's RAM, so we can afford being more
-        // aggressive here and set the window to be as large as the system's RAM, leaving
-        // some room for dealing with potential fragmentation.
-        let vram_mib = options.vram.unwrap_or(MiB::from(ram_total_mib as u32));
+        // By default, HK sets the heap size to be half the size of the *guest* memory.
+        // Since commit 167744dc it's also possible to override the heap size by setting
+        // the HK_SYSMEM environment variable.
+        //
+        // Let's set the SHM window for virtio-gpu to be as large as the host's RAM, not
+        // because we expect VRAM to be as large as RAM, but to account for the more than
+        // likely region fragmentation.
+        //
+        // Then, let's set HK_SYSMEM to be either half the size of the *host* memory, or
+        // the value passed by the user with the "vram" argument.
+        let vram_shm_mib = MiB::from(ram_total_mib as u32);
+        let vram_mib = options.vram.unwrap_or(MiB::from(ram_total_mib as u32 / 2));
+        env.insert(
+            "HK_SYSMEM".to_owned(),
+            (u32::from(vram_mib) as u64 * 1024 * 1024).to_string(),
+        );
 
         // Bind the microVM to the specified CPU cores.
         let mut cpuset = CpuSet::new();
@@ -185,7 +195,7 @@ fn main() -> Result<()> {
             krun_set_gpu_options2(
                 ctx_id,
                 virgl_flags,
-                (u32::from(vram_mib) as u64) * 1024 * 1024,
+                (u32::from(vram_shm_mib) as u64) * 1024 * 1024,
             )
         };
         if err < 0 {
