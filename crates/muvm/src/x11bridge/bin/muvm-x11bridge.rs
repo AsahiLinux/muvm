@@ -59,6 +59,7 @@ const X11_OPCODE_QUERY_EXTENSION: u8 = 98;
 const X11_OPCODE_NOP: u8 = 127;
 const X11_REPLY: u8 = 1;
 const X11_GENERIC_EVENT: u8 = 35;
+const DRI3_OPCODE_VERSION: u8 = 0;
 const DRI3_OPCODE_OPEN: u8 = 1;
 const DRI3_OPCODE_PIXMAP_FROM_BUFFER: u8 = 2;
 const DRI3_OPCODE_FENCE_FROM_FD: u8 = 4;
@@ -950,7 +951,9 @@ impl Client {
                         self.present_qe_resp_seq = Some(self.seq_no);
                     }
                 } else if Some(buf[ptr]) == self.dri3_ext_opcode {
-                    if buf[ptr + 1] == DRI3_OPCODE_OPEN {
+                    if buf[ptr + 1] == DRI3_OPCODE_VERSION {
+                        buf[ptr + 8] = buf[ptr + 8].min(3);
+                    } else if buf[ptr + 1] == DRI3_OPCODE_OPEN {
                         buf[ptr] = X11_OPCODE_NOP;
                         let mut reply =
                             vec![1, 1, (self.seq_no & 0xff) as u8, (self.seq_no >> 8) as u8];
