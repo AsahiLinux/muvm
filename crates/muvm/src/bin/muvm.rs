@@ -88,6 +88,8 @@ fn main() -> Result<()> {
         } => (cookie, lock_file, command, command_args, env),
     };
 
+    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+
     {
         // Set the log level to "off".
         //
@@ -371,7 +373,6 @@ fn main() -> Result<()> {
         muvm_guest_args.push(arg);
     }
 
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
     env.insert(
         "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
