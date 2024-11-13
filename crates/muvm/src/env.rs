@@ -10,12 +10,27 @@ use log::debug;
 
 /// Automatically pass these environment variables to the microVM, if they are
 /// set.
-const WELL_KNOWN_ENV_VARS: [&str; 5] = [
+const WELL_KNOWN_ENV_VARS: [&str; 20] = [
+    "LANG",
+    "LC_ADDRESS",
+    "LC_ALL",
+    "LC_COLLATE",
+    "LC_CTYPE",
+    "LC_IDENTIFICATION",
+    "LC_MEASUREMENT",
+    "LC_MESSAGES",
+    "LC_MONETARY",
+    "LC_NAME",
+    "LC_NUMERIC",
+    "LC_PAPER",
+    "LC_TELEPHONE",
+    "LC_TIME",
     "LD_LIBRARY_PATH",
     "LIBGL_DRIVERS_PATH",
     "MESA_LOADER_DRIVER_OVERRIDE", // needed for asahi
     "PATH",                        // needed by `muvm-guest` program
     "RUST_LOG",
+    "XMODIFIERS",
 ];
 
 /// See https://github.com/AsahiLinux/docs/wiki/Devices
@@ -55,6 +70,23 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
         };
         env_map.insert(key.to_owned(), value);
     }
+
+    if !(env_map.contains_key("LANG")
+        || env_map.contains_key("LC_CTYPE")
+        || env_map.contains_key("LC_ALL"))
+    {
+        // Set a default UTF-8 locale if none
+        env_map.insert("LANG".to_owned(), "C.UTF-8".to_owned());
+    }
+
+    // Force XIM usage for GTK2/3 and QT4/QT5 (QT6 and GTK4 drop this).
+    // This actually works with muvm-x11bridge for input methods in Steam,
+    // since it ships the xim plugin for its bundled gtk3.
+    // Once we have wayland, the Wayland transport should work for newer stuff.
+    // This way we don't need to support passing through the dbus/socket based
+    // direct plugin support.
+    env_map.insert("GTK_IM_MODULE".to_owned(), "xim".to_owned());
+    env_map.insert("QT_IM_MODULE".to_owned(), "xim".to_owned());
 
     for (key, value) in env {
         let value = value.map_or_else(
