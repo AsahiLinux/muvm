@@ -38,6 +38,10 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
 
 fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
     for dir in ["/dev/dri", "/dev/snd"] {
+        if !Path::new(dir).exists() {
+            continue;
+        }
+
         let dir_iter =
             fs::read_dir(dir).with_context(|| format!("Failed to read directory `{dir}`"))?;
 
