@@ -29,7 +29,7 @@ jobs:
             components: rustfmt, clippy
 
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get -y install libclang-dev
+        run: sudo apt-get update && sudo apt-get -y install libclang-dev libudev-dev
 
       - name: Download libkrun.h
         run: sudo curl -o /usr/include/libkrun.h https://raw.githubusercontent.com/containers/libkrun/refs/heads/main/include/libkrun.h
