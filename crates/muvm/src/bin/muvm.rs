@@ -15,6 +15,7 @@ use log::debug;
 use muvm::cli_options::options;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
+use muvm::hidpipe_server::spawn_hidpipe_server;
 use muvm::launch::{launch_or_lock, LaunchResult};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
@@ -297,19 +298,19 @@ fn main() -> Result<()> {
             }
         }
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
-        if hidpipe_path.exists() {
-            let hidpipe_path = CString::new(
-                hidpipe_path
-                    .to_str()
-                    .expect("hidpipe_path should not contain invalid UTF-8"),
-            )
-            .context("Failed to process `hidpipe` path as it contains NUL character")?;
-            // SAFETY: `hidpipe_path` is a pointer to a `CString` with long enough lifetime.
-            let err = unsafe { krun_add_vsock_port(ctx_id, 3334, hidpipe_path.as_ptr()) };
-            if err < 0 {
-                let err = Errno::from_raw_os_error(-err);
-                return Err(err).context("Failed to configure vsock for hidpipe socket");
-            }
+        spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
+        let hidpipe_path = CString::new(
+            hidpipe_path
+                .to_str()
+                .expect("hidpipe_path should not contain invalid UTF-8"),
+        )
+        .context("Failed to process `hidpipe` path as it contains NUL character")?;
+
+        // SAFETY: `hidpipe_path` is a pointer to a `CString` with long enough lifetime.
+        let err = unsafe { krun_add_vsock_port(ctx_id, 3334, hidpipe_path.as_ptr()) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure vsock for hidpipe socket");
         }
     }
 

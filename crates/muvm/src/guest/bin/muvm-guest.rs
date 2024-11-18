@@ -14,7 +14,6 @@ use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
 #[cfg(feature = "x11bridge")]
 use muvm::guest::x11::setup_x11_forwarding;
-use muvm::utils::env::find_in_path;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
@@ -57,11 +56,10 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    if let Some(hidpipe_client_path) = find_in_path("hidpipe-client")? {
-        Command::new(hidpipe_client_path)
-            .arg(format!("{}", options.uid))
-            .spawn()?;
-    }
+    Command::new("muvm-hidpipe")
+        .arg(format!("{}", options.uid))
+        .spawn()
+        .context("Failed to execute `muvm-hidpipe` as child process")?;
 
     // Before switching to the user, start another instance of muvm-server to serve
     // launch requests as root.
