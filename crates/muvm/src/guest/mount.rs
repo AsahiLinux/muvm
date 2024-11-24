@@ -139,7 +139,7 @@ pub fn mount_filesystems() -> Result<()> {
         println!("Failed to mount FEX rootfs, carrying on without.")
     }
 
-    place_etc("resolv.conf", None)?;
+    place_etc("resolv.conf", Some("nameserver 1.1.1.1\n"))?;
 
     mount2(
         Some("binfmt_misc"),
