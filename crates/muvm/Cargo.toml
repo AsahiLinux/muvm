@@ -3,7 +3,7 @@ name = "muvm"
 version = "0.3.1"
 authors = ["Sergio Lopez <slp@redhat.com>", "Teoh Han Hui <teohhanhui@gmail.com>", "Sasha Finkelstein <fnkl.kernel@gmail.com>", "Asahi Lina <lina@asahilina.net>"]
 edition = "2021"
-rust-version = "1.77.0"
+rust-version = "1.80.0"
 description = "Run programs from your system in a microVM"
 repository = "https://github.com/AsahiLinux/muvm"
 license = "MIT"
@@ -12,12 +12,14 @@ license = "MIT"
 anyhow = { version = "1.0.82", default-features = false, features = ["std"] }
 bpaf = { version = "0.9.11", default-features = false, features = [] }
 byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
+const-str = { version = "0.6.2", default-features = false, features = [] }
 env_logger = { version = "0.11.3", default-features = false, features = ["auto-color", "humantime", "unstable-kv"] }
 input-linux = { version = "0.7.0", default-features = false, features = [] }
 input-linux-sys = { version = "0.9.0", default-features = false, features = [] }
 krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
 log = { version = "0.4.21", default-features = false, features = ["kv"] }
 nix = { version = "0.29.0", default-features = false, features = ["event", "fs", "ioctl", "mman", "ptrace", "signal", "socket", "uio", "user"] }
+neli = { version = "0.7.0-rc3", default-features = false, features = ["sync"] }
 procfs = { version = "0.17.0", default-features = false, features = [] }
 rustix = { version = "0.38.34", default-features = false, features = ["fs", "mount", "process", "pty", "std", "stdio", "system", "termios", "use-libc-auxv"] }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
