@@ -5,6 +5,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use log::debug;
+use muvm::env::find_muvm_exec;
 use muvm::guest::cli_options::options;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::mount::mount_filesystems;
@@ -65,7 +66,8 @@ fn main() -> Result<()> {
 
     // Before switching to the user, start another instance of muvm-server to serve
     // launch requests as root.
-    Command::new("muvm-server")
+    let muvm_server_path = find_muvm_exec("muvm-server")?;
+    Command::new(muvm_server_path)
         .spawn()
         .context("Failed to execute `muvm-server` as child process")?;
 
