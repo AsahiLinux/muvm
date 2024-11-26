@@ -370,11 +370,17 @@ fn main() -> Result<()> {
     let muvm_server_path = find_muvm_exec("muvm-server")?;
 
     let mut muvm_guest_args: Vec<String> = vec![
-        muvm_guest_path,
+        muvm_guest_path
+            .to_str()
+            .context("Failed to process `muvm-guest` path as it contains invalid UTF-8")?
+            .to_owned(),
         username,
         format!("{uid}", uid = getuid().as_raw()),
         format!("{gid}", gid = getgid().as_raw()),
-        muvm_server_path,
+        muvm_server_path
+            .to_str()
+            .context("Failed to process `muvm-server` path as it contains invalid UTF-8")?
+            .to_owned(),
         command
             .to_str()
             .context("Failed to process command as it contains invalid UTF-8")?

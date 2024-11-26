@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::utils::env::find_in_path;
 use anyhow::{Context, Result};
 use log::debug;
+
+#[cfg(not(debug_assertions))]
+use crate::utils::env::find_in_path;
 
 /// Automatically pass these environment variables to the microVM, if they are
 /// set.
@@ -101,23 +103,31 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     Ok(env_map)
 }
 
-pub fn find_muvm_exec<P>(program: P) -> Result<String>
+#[cfg(not(debug_assertions))]
+pub fn find_muvm_exec<P>(program: P) -> Result<PathBuf>
 where
     P: AsRef<Path>,
 {
     let program = program.as_ref();
+
     let path = find_in_path(program)
         .with_context(|| format!("Failed to check existence of {program:?}"))?;
-    let path = if let Some(path) = path {
-        path
-    } else {
-        let path = env::current_exe().and_then(|p| p.canonicalize());
-        let path = path.context("Failed to get path of current running executable")?;
-        path.with_file_name(program)
-    };
-    let path = path.to_str().with_context(|| {
-        format!("Failed to process {program:?} path as it contains invalid UTF-8")
-    })?;
+    let path = path.with_context(|| format!("Could not find {program:?}"))?;
 
-    Ok(path.to_string())
+    Ok(path)
+}
+
+#[cfg(debug_assertions)]
+pub fn find_muvm_exec<P>(program: P) -> Result<PathBuf>
+where
+    P: AsRef<Path>,
+{
+    let program = program.as_ref();
+
+    let path = env::current_exe()
+        .and_then(|p| p.canonicalize())
+        .context("Failed to get path of current running executable")?;
+    let path = path.with_file_name(program);
+
+    Ok(path)
 }
