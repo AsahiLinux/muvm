@@ -57,7 +57,8 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    Command::new("muvm-hidpipe")
+    let muvm_hidpipe_path = find_muvm_exec("muvm-hidpipe")?;
+    Command::new(muvm_hidpipe_path)
         .arg(format!("{}", options.uid))
         .spawn()
         .context("Failed to execute `muvm-hidpipe` as child process")?;
