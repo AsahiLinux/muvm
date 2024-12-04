@@ -109,14 +109,6 @@ pub fn options() -> OptionParser<Options> {
         .short('x')
         .help("Use direct X11 forwarding instead of sommelier + XWayland")
         .switch();
-
-    #[cfg(not(feature = "x11bridge"))]
-    let direct_x11 = direct_x11
-        .guard(
-            |x| !*x,
-            "--direct-x11 requires the `x11bridge` crate feature",
-        )
-        .hide();
     let interactive = long("interactive")
         .short('i')
         .help("Allocate a tty guest-side and connect it to the current stdin/out")

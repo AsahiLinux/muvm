@@ -421,7 +421,6 @@ fn main() -> Result<()> {
     );
     env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
-    #[cfg(feature = "x11bridge")]
     if options.direct_x11 {
         let display =
             env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;

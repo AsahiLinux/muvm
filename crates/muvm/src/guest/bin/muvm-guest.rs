@@ -13,7 +13,6 @@ use muvm::guest::net::configure_network;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
-#[cfg(feature = "x11bridge")]
 use muvm::guest::x11::setup_x11_forwarding;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
@@ -81,12 +80,7 @@ fn main() -> Result<()> {
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, 3333)?;
 
-    #[cfg(feature = "x11bridge")]
-    let direct_x11 = setup_x11_forwarding(run_path)?;
-    #[cfg(not(feature = "x11bridge"))]
-    let direct_x11 = false;
-
-    if !direct_x11 {
+    if !setup_x11_forwarding(run_path)? {
         // Will not return if successful.
         exec_sommelier(&options.command, &options.command_args)
             .context("Failed to execute sommelier")?;
