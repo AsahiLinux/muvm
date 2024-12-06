@@ -44,7 +44,7 @@ fn set_guest_pressure(server_port: u32, cookie: Uuid, pressure: GuestPressure) -
         let command = PathBuf::from("/muvmdropcaches");
         let command_args = vec![];
         let env = HashMap::new();
-        request_launch(server_port, cookie, command, command_args, env)?;
+        request_launch(server_port, cookie, command, command_args, env, 0, false)?;
     }
 
     let wsf: u32 = pressure.into();
@@ -53,7 +53,7 @@ fn set_guest_pressure(server_port: u32, cookie: Uuid, pressure: GuestPressure) -
     let command = PathBuf::from("/sbin/sysctl");
     let command_args = vec![format!("vm.watermark_scale_factor={}", wsf)];
     let env = HashMap::new();
-    request_launch(server_port, cookie, command, command_args, env)
+    request_launch(server_port, cookie, command, command_args, env, 0, false)
 }
 
 fn run(server_port: u32, cookie: Uuid) {

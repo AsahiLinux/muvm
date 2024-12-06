@@ -18,6 +18,7 @@ pub struct Options {
     pub fex_images: Vec<String>,
     pub sommelier: bool,
     pub interactive: bool,
+    pub tty: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -110,7 +111,11 @@ pub fn options() -> OptionParser<Options> {
         .switch();
     let interactive = long("interactive")
         .short('i')
-        .help("Allocate a tty guest-side and connect it to the current stdin/out")
+        .help("Attach to the command's stdin/out after starting it")
+        .switch();
+    let tty = long("tty")
+        .short('t')
+        .help("Allocate a tty for the command")
         .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
@@ -130,6 +135,7 @@ pub fn options() -> OptionParser<Options> {
         fex_images,
         sommelier,
         interactive,
+        tty,
         // positionals
         command,
         command_args,
