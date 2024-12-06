@@ -10,4 +10,6 @@ pub struct Launch {
     pub command: PathBuf,
     pub command_args: Vec<String>,
     pub env: HashMap<String, String>,
+    pub vsock_port: u32,
+    pub tty: bool,
 }

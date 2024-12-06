@@ -3,6 +3,7 @@ use std::ffi::{c_char, CString};
 use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
+use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
@@ -59,7 +60,7 @@ fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     env_logger::init();
 
     if getuid().as_raw() == 0 || geteuid().as_raw() == 0 {
@@ -75,11 +76,12 @@ fn main() -> Result<()> {
         options.command_args,
         options.env,
         options.interactive,
+        options.tty,
     )? {
-        LaunchResult::LaunchRequested => {
+        LaunchResult::LaunchRequested(code) => {
             // There was a muvm instance already running and we've requested it
             // to launch the command successfully, so all the work is done.
-            return Ok(());
+            return Ok(code);
         },
         LaunchResult::LockAcquired {
             cookie,
