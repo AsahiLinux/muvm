@@ -130,27 +130,11 @@ fn main() -> Result<()> {
         let sysinfo = sysinfo().context("Failed to get system information")?;
         let ram_total_mib = (sysinfo.ram_total() / (1024 * 1024)) as u32;
 
-        let ram_mib = if let Some(ram_mib) = options.mem {
-            ram_mib
-        } else {
-            // By default, set the microVM RAM to be 80% of the system's RAM.
-            let guest_ram = (ram_total_mib as f64 * 0.8) as u32;
-            // Ensure we leave 3072 MiB free for the host + VRAM to avoid
-            // compromising the host's stability. This mainly applies to systems
-            // with 8GB of RAM.
-            let guest_ram = if ram_total_mib
-                .checked_sub(guest_ram)
-                .context("Failed to calculate the amount of free RAM")?
-                < 3072
-            {
-                ram_total_mib
-                    .checked_sub(3072)
-                    .context("Systems with less than 3072 MiB of RAM are not supported")?
-            } else {
-                guest_ram
-            };
-            MiB::from(guest_ram)
-        };
+        // By default, set the microVM RAM to be 80% of the system's RAM.
+        let ram_mib = options
+            .mem
+            .unwrap_or(MiB::from((ram_total_mib as f64 * 0.8) as u32));
+
         // By default, HK sets the heap size to be half the size of the *guest* memory.
         // Since commit 167744dc it's also possible to override the heap size by setting
         // the HK_SYSMEM environment variable.
