@@ -16,6 +16,7 @@ pub struct Options {
     pub root_server_port: u32,
     pub server_port: u32,
     pub fex_images: Vec<String>,
+    pub merged_rootfs: bool,
     pub sommelier: bool,
     pub interactive: bool,
     pub tty: bool,
@@ -90,6 +91,10 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument::<String>("FEX_IMAGE")
         .many();
+    let merged_rootfs = long("merged-rootfs")
+        .short('m')
+        .help("Use merged rootfs for FEX (experimental)")
+        .switch();
     let passt_socket = long("passt-socket")
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
@@ -133,6 +138,7 @@ pub fn options() -> OptionParser<Options> {
         root_server_port,
         server_port,
         fex_images,
+        merged_rootfs,
         sommelier,
         interactive,
         tty,
