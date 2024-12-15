@@ -222,6 +222,15 @@ fn main() -> Result<ExitCode> {
             .collect()
     };
 
+    if options.merged_rootfs {
+        if disks.is_empty() {
+            return Err(anyhow!(
+                "Merged RootFS mode requires one or more RootFS images"
+            ));
+        }
+        env.insert("FEX_MERGEDROOTFS".to_owned(), "1".to_owned());
+    }
+
     for path in disks {
         add_ro_disk(ctx_id, &path, &path).context("Failed to configure disk")?;
     }
