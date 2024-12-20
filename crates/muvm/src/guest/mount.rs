@@ -267,16 +267,13 @@ pub fn overlay_file(src: &str, dest: &str) -> Result<()> {
     .with_context(|| format!("Failed to move_mount {src:?} to {dest:?}"))
 }
 
-pub fn place_etc(file: &str, contents: Option<&str>) -> Result<()> {
-    let tmp = "/tmp/".to_string() + file;
-    let etc = "/etc/".to_string() + file;
-
+pub fn place_file(backing: &str, dest: &str, contents: Option<&str>) -> Result<()> {
     {
         let mut file = File::options()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&tmp)
+            .open(backing)
             .context("Failed to create temp backing of an etc file")?;
 
         if let Some(content) = contents {
@@ -285,13 +282,13 @@ pub fn place_etc(file: &str, contents: Option<&str>) -> Result<()> {
         }
     }
 
-    overlay_file(&tmp, &etc)
+    overlay_file(backing, dest)
 }
 
 pub fn mount_filesystems() -> Result<()> {
     make_tmpfs("/var/run")?;
 
-    place_etc("resolv.conf", None)?;
+    place_file("/run/resolv.conf", "/etc/resolv.conf", None)?;
 
     mount2(
         Some("binfmt_misc"),
