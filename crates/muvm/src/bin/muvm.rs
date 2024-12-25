@@ -77,6 +77,7 @@ fn main() -> Result<ExitCode> {
         options.env,
         options.interactive,
         options.tty,
+        options.privileged,
     )? {
         LaunchResult::LaunchRequested(code) => {
             // There was a muvm instance already running and we've requested it
@@ -264,7 +265,7 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port, options.root_server_port)
+            start_passt(options.server_port)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -410,10 +411,6 @@ fn main() -> Result<ExitCode> {
         "MUVM_SERVER_PORT".to_owned(),
         options.server_port.to_string(),
     );
-    env.insert(
-        "MUVM_ROOT_SERVER_PORT".to_owned(),
-        options.root_server_port.to_string(),
-    );
     env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
     let display = env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
@@ -467,7 +464,7 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    spawn_monitor(options.root_server_port, cookie);
+    spawn_monitor(options.server_port, cookie);
 
     {
         // Start and enter the microVM. Unless there is some error while creating the
