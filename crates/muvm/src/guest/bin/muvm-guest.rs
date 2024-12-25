@@ -11,7 +11,6 @@ use muvm::guest::fex::setup_fex;
 use muvm::guest::mount::mount_filesystems;
 use muvm::guest::net::configure_network;
 use muvm::guest::socket::setup_socket_proxy;
-use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
 use rustix::process::{getrlimit, setrlimit, Resource};
@@ -80,13 +79,8 @@ fn main() -> Result<()> {
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, 3333)?;
 
-    if !setup_x11_forwarding(run_path)? {
-        // Will not return if successful.
-        exec_sommelier(&options.command, &options.command_args)
-            .context("Failed to execute sommelier")?;
-    }
+    setup_x11_forwarding(run_path)?;
 
-    // Fallback option if sommelier is not present or for direct X11 mode.
     debug!(command:? = options.command, command_args:? = options.command_args; "exec");
     let err = Command::new(&options.command)
         .args(options.command_args)
