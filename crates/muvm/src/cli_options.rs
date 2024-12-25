@@ -17,7 +17,6 @@ pub struct Options {
     pub server_port: u32,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
-    pub sommelier: bool,
     pub interactive: bool,
     pub tty: bool,
     pub command: PathBuf,
@@ -111,9 +110,6 @@ pub fn options() -> OptionParser<Options> {
         .argument("SERVER_PORT")
         .fallback(3334)
         .display_fallback();
-    let sommelier = long("sommelier")
-        .help("Use sommelier + XWayland instead of x11bridge")
-        .switch();
     let interactive = long("interactive")
         .short('i')
         .help("Attach to the command's stdin/out after starting it")
@@ -139,7 +135,6 @@ pub fn options() -> OptionParser<Options> {
         server_port,
         fex_images,
         merged_rootfs,
-        sommelier,
         interactive,
         tty,
         // positionals

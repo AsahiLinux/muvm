@@ -416,16 +416,13 @@ fn main() -> Result<ExitCode> {
     );
     env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
-    if !options.sommelier {
-        let display =
-            env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
-        env.insert("HOST_DISPLAY".to_string(), display);
+    let display = env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
+    env.insert("HOST_DISPLAY".to_string(), display);
 
-        // And forward XAUTHORITY. This will be modified to fix the
-        // display name in muvm-guest.
-        if let Ok(xauthority) = env::var("XAUTHORITY") {
-            env.insert("XAUTHORITY".to_string(), xauthority);
-        }
+    // And forward XAUTHORITY. This will be modified to fix the
+    // display name in muvm-guest.
+    if let Ok(xauthority) = env::var("XAUTHORITY") {
+        env.insert("XAUTHORITY".to_string(), xauthority);
     }
 
     let mut krun_config = KrunConfig {
