@@ -13,11 +13,11 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
-    pub root_server_port: u32,
     pub server_port: u32,
     pub fex_images: Vec<String>,
     pub interactive: bool,
     pub tty: bool,
+    pub privileged: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -93,12 +93,6 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let root_server_port = long("root-server-port")
-        .short('r')
-        .help("Set the port to be used in root server mode")
-        .argument("ROOT_SERVER_PORT")
-        .fallback(3335)
-        .display_fallback();
     let server_port = long("server-port")
         .short('p')
         .help("Set the port to be used in server mode")
@@ -113,6 +107,12 @@ pub fn options() -> OptionParser<Options> {
         .short('t')
         .help("Allocate a tty for the command")
         .switch();
+    let privileged = long("privileged")
+        .help(
+            "Run the command as root inside the vm.
+        This notably does not allow root access to the host fs.",
+        )
+        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -126,11 +126,11 @@ pub fn options() -> OptionParser<Options> {
         mem,
         vram,
         passt_socket,
-        root_server_port,
         server_port,
         fex_images,
         interactive,
         tty,
+        privileged,
         // positionals
         command,
         command_args,

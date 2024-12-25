@@ -4,13 +4,13 @@ use std::os::unix::fs::{chown, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use nix::unistd::{setgid, setuid, Gid, Uid, User};
+use nix::unistd::{setresgid, setresuid, Gid, Uid, User};
 
 pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
     setup_directories(uid, gid)?;
 
-    setgid(gid).context("Failed to setgid")?;
-    setuid(uid).context("Failed to setuid")?;
+    setresgid(gid, gid, Gid::from(0)).context("Failed to setgid")?;
+    setresuid(uid, uid, Uid::from(0)).context("Failed to setuid")?;
 
     let path = tempfile::Builder::new()
         .prefix(&format!("muvm-run-{uid}-"))

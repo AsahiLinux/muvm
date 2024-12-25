@@ -13,6 +13,7 @@ use muvm::guest::net::configure_network;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use nix::unistd::{setresgid, setresuid, Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
@@ -61,13 +62,6 @@ fn main() -> Result<()> {
         .spawn()
         .context("Failed to execute `muvm-hidpipe` as child process")?;
 
-    // Before switching to the user, start another instance of muvm-server to serve
-    // launch requests as root.
-    let muvm_server_path = find_muvm_exec("muvm-server")?;
-    Command::new(muvm_server_path)
-        .spawn()
-        .context("Failed to execute `muvm-server` as child process")?;
-
     let run_path = match setup_user(options.username, options.uid, options.gid) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
@@ -81,6 +75,8 @@ fn main() -> Result<()> {
 
     setup_x11_forwarding(run_path)?;
 
+    setresuid(options.uid, Uid::from(0), Uid::from(0))?;
+    setresgid(options.gid, Gid::from(0), Gid::from(0))?;
     debug!(command:? = options.command, command_args:? = options.command_args; "exec");
     let err = Command::new(&options.command)
         .args(options.command_args)

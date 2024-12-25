@@ -12,4 +12,5 @@ pub struct Launch {
     pub env: HashMap<String, String>,
     pub vsock_port: u32,
     pub tty: bool,
+    pub privileged: bool,
 }

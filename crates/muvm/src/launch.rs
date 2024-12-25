@@ -94,9 +94,19 @@ fn wrapped_launch(
     env: HashMap<String, String>,
     interactive: bool,
     tty: bool,
+    privileged: bool,
 ) -> Result<ExitCode> {
     if !interactive {
-        request_launch(server_port, cookie, command, command_args, env, 0, false)?;
+        request_launch(
+            server_port,
+            cookie,
+            command,
+            command_args,
+            env,
+            0,
+            false,
+            privileged,
+        )?;
         return Ok(ExitCode::from(0));
     }
     let run_path = env::var("XDG_RUNTIME_DIR")
@@ -122,6 +132,7 @@ fn wrapped_launch(
         env,
         vsock_port,
         tty,
+        privileged,
     )?;
     let code = run_io_host(listener, tty)?;
     drop(raw_tty);
@@ -135,13 +146,23 @@ pub fn launch_or_lock(
     env: Vec<(String, Option<String>)>,
     interactive: bool,
     tty: bool,
+    privileged: bool,
 ) -> Result<LaunchResult> {
     let running_server_port = env::var("MUVM_SERVER_PORT").ok();
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
         let env = prepare_env_vars(env)?;
         let cookie = read_cookie()?;
-        return match wrapped_launch(port, cookie, command, command_args, env, interactive, tty) {
+        return match wrapped_launch(
+            port,
+            cookie,
+            command,
+            command_args,
+            env,
+            interactive,
+            tty,
+            privileged,
+        ) {
             Err(err) => Err(anyhow!("could not request launch to server: {err}")),
             Ok(code) => Ok(LaunchResult::LaunchRequested(code)),
         };
@@ -168,6 +189,7 @@ pub fn launch_or_lock(
                     env.clone(),
                     interactive,
                     tty,
+                    privileged,
                 ) {
                     Err(err) => match err.downcast_ref::<LaunchError>() {
                         Some(&LaunchError::Connection(_)) => {
@@ -238,6 +260,7 @@ pub fn request_launch(
     env: HashMap<String, String>,
     vsock_port: u32,
     tty: bool,
+    privileged: bool,
 ) -> Result<()> {
     let mut stream =
         TcpStream::connect(format!("127.0.0.1:{server_port}")).map_err(LaunchError::Connection)?;
@@ -249,6 +272,7 @@ pub fn request_launch(
         env,
         vsock_port,
         tty,
+        privileged,
     };
 
     stream
