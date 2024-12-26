@@ -16,8 +16,7 @@ use log::{debug, error};
 use nix::errno::Errno;
 use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags, EpollTimeout};
 use nix::sys::socket::{connect, socket, AddressFamily, SockFlag, SockType, VsockAddr};
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{fork, pipe, setresgid, setresuid, setsid, ForkResult, Gid, Uid};
+use nix::unistd::{pipe, setresgid, setresuid, setsid, Gid, Uid};
 use rustix::process::ioctl_tiocsctty;
 use rustix::pty::{ptsname, unlockpt};
 use rustix::termios::{tcsetwinsize, Winsize};
@@ -30,6 +29,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt as _;
 use uuid::Uuid;
 
+use crate::guest::user;
 use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
 use crate::utils::tty::*;
@@ -220,7 +220,7 @@ async fn handle_connection(
     if command == Path::new("/muvmdropcaches") {
         // SAFETY: everything below should be async signal safe
         let code = unsafe {
-            run_as_root(|| {
+            user::run_as_root(|| {
                 let fd = nix::libc::open(c"/proc/sys/vm/drop_caches".as_ptr(), nix::libc::O_WRONLY);
                 if fd < 0 {
                     return 1;
@@ -462,23 +462,5 @@ fn run_io_guest(
                 _ => unreachable!(),
             }
         }
-    }
-}
-
-// SAFETY: f will be run in post-fork environment, and so must bas async signal safe
-unsafe fn run_as_root(f: impl FnOnce() -> i32) -> Result<i32> {
-    // SAFETY: child only calls _exit, setuid, and f, all are async signal safe
-    match unsafe { fork()? } {
-        ForkResult::Child => {
-            // SAFETY: _exit and setuid are safe as no pointers are involved
-            unsafe {
-                nix::libc::setuid(0);
-                nix::libc::_exit(f());
-            }
-        },
-        ForkResult::Parent { child } => match waitpid(child, None)? {
-            WaitStatus::Exited(_, code) => Ok(code),
-            e => Err(anyhow!("Unexpected status: {:?}", e)),
-        },
     }
 }
