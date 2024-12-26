@@ -1,6 +1,6 @@
-use std::cmp;
 use std::os::fd::AsFd;
 use std::process::Command;
+use std::{cmp, env};
 
 use anyhow::{Context, Result};
 use muvm::env::find_muvm_exec;
@@ -12,10 +12,16 @@ use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use muvm::guest::x11bridge::start_x11bridge;
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 fn main() -> Result<()> {
     env_logger::init();
+
+    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
+        start_x11bridge(val.parse()?);
+        return Ok(());
+    }
 
     let options = options().run();
 
