@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::ffi::{c_char, CString};
 use std::io::Write;
@@ -21,23 +22,24 @@ use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
+use muvm::utils::launch::{GuestConfiguration, Launch};
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
 use rustix::io::Errno;
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tempfile::NamedTempFile;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct KrunConfig {
     #[serde(rename = "Cmd")]
     args: Vec<String>,
     #[serde(rename = "Env")]
     envs: Vec<String>,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct KrunBaseConfig {
     #[serde(rename = "Config")]
     config: KrunConfig,
@@ -223,13 +225,10 @@ fn main() -> Result<ExitCode> {
             .collect()
     };
 
-    if options.merged_rootfs {
-        if disks.is_empty() {
-            return Err(anyhow!(
-                "Merged RootFS mode requires one or more RootFS images"
-            ));
-        }
-        env.insert("FEX_MERGEDROOTFS".to_owned(), "1".to_owned());
+    if options.merged_rootfs && disks.is_empty() {
+        return Err(anyhow!(
+            "Merged RootFS mode requires one or more RootFS images"
+        ));
     }
 
     for path in disks {
@@ -385,55 +384,67 @@ fn main() -> Result<ExitCode> {
 
     let muvm_guest_path = find_muvm_exec("muvm-guest")?;
 
-    let mut muvm_guest_args: Vec<String> = vec![
+    let display = env::var("DISPLAY").ok();
+    let guest_config = GuestConfiguration {
+        command: Launch {
+            cookie,
+            command,
+            command_args,
+            env: HashMap::new(),
+            vsock_port: 0,
+            tty: false,
+            privileged: false,
+        },
+        server_port: options.server_port,
+        username,
+        uid: getuid().as_raw(),
+        gid: getgid().as_raw(),
+        host_display: display,
+        server_cookie: cookie,
+        merged_rootfs: options.merged_rootfs,
+    };
+    let mut muvm_config_file = NamedTempFile::new()
+        .context("Failed to create a temporary file to store the muvm guest config")?;
+    write!(
+        muvm_config_file,
+        "{}",
+        serde_json::to_string(&guest_config)
+            .context("Failed to transform GuestConfiguration into a JSON string")?
+    )
+    .context("Failed to write to temporary config file")?;
+
+    let muvm_config_path = muvm_config_file
+        .path()
+        .to_str()
+        .context("Temporary directory path contains invalid UTF-8")?
+        .to_owned();
+    let muvm_guest_args = vec![
         muvm_guest_path
             .to_str()
             .context("Failed to process `muvm-guest` path as it contains invalid UTF-8")?
             .to_owned(),
-        username,
-        format!("{uid}", uid = getuid().as_raw()),
-        format!("{gid}", gid = getgid().as_raw()),
-        command
-            .to_str()
-            .context("Failed to process command as it contains invalid UTF-8")?
-            .to_string(),
+        muvm_config_path,
     ];
-    for arg in command_args {
-        muvm_guest_args.push(arg);
-    }
-
-    env.insert(
-        "MUVM_SERVER_PORT".to_owned(),
-        options.server_port.to_string(),
-    );
-    env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
-
-    let display = env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
-    env.insert("HOST_DISPLAY".to_string(), display);
 
     // And forward XAUTHORITY. This will be modified to fix the
     // display name in muvm-guest.
     if let Ok(xauthority) = env::var("XAUTHORITY") {
-        env.insert("XAUTHORITY".to_string(), xauthority);
+        env.insert("XAUTHORITY".to_owned(), xauthority);
     }
 
-    let mut krun_config = KrunConfig {
-        args: Vec::new(),
-        envs: Vec::new(),
-    };
-    for arg in muvm_guest_args {
-        krun_config.args.push(arg);
-    }
-    for (key, value) in env {
-        krun_config.envs.push(format!("{}={}", key, value));
-    }
     let krun_config = KrunBaseConfig {
-        config: krun_config,
+        config: KrunConfig {
+            args: muvm_guest_args,
+            envs: env
+                .into_iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect(),
+        },
     };
 
     // SAFETY: `config_file` lifetime needs to exceed krun_start_enter's
     let mut config_file = NamedTempFile::new()
-        .context("Failed to create a temporary file to store the guest config")?;
+        .context("Failed to create a temporary file to store the krun config")?;
     write!(
         config_file,
         "{}",

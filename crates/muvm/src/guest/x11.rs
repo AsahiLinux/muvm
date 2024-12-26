@@ -9,16 +9,10 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::guest::x11bridge::start_x11bridge;
 
-pub fn setup_x11_forwarding<P>(run_path: P) -> Result<bool>
+pub fn setup_x11_forwarding<P>(run_path: P, host_display: &str) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    // Set by muvm if DISPLAY was provided from the host.
-    let host_display = match env::var("HOST_DISPLAY") {
-        Ok(d) => d,
-        Err(_) => return Ok(false),
-    };
-
     if !host_display.starts_with(':') {
         return Err(anyhow!("Invalid host DISPLAY"));
     }
@@ -90,5 +84,5 @@ where
         }
     });
 
-    Ok(true)
+    Ok(())
 }

@@ -1,7 +1,6 @@
 use crate::guest::server_worker::{State, Worker};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::error;
-use std::env;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
 use tokio::net::TcpListener;
@@ -13,14 +12,10 @@ use uuid::Uuid;
 
 pub async fn server_main(
     server_port: u32,
+    cookie: Uuid,
     command: PathBuf,
     command_args: Vec<String>,
 ) -> Result<()> {
-    let cookie = env::var("MUVM_SERVER_COOKIE")
-        .with_context(|| "Could find server cookie as an environment variable")?;
-
-    let cookie = Uuid::try_parse(&cookie).context("Couldn't parse cookie as UUID v7")?;
-
     let listener = TcpListener::bind(format!("0.0.0.0:{}", server_port)).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
