@@ -9,6 +9,5 @@ pub mod net;
 pub mod types;
 
 pub mod guest;
-pub mod server;
 pub mod tty;
 pub mod utils;
