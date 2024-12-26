@@ -35,7 +35,3 @@ path = "src/bin/muvm.rs"
 [[bin]]
 name = "muvm-guest"
 path = "src/guest/bin/muvm-guest.rs"
-
-[[bin]]
-name = "muvm-hidpipe"
-path = "src/hidpipe/bin/muvm-hidpipe.rs"
