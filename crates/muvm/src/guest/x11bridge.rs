@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bpaf::{construct, long, OptionParser, Parser};
 use nix::errno::Errno;
 use nix::fcntl::readlink;
 use nix::libc::{
@@ -18,7 +17,7 @@ use nix::sys::socket::{
 use nix::sys::stat::fstat;
 use nix::sys::uio::{process_vm_writev, RemoteIoVec};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{getresgid, getresuid, mkstemp, read, setegid, seteuid, Pid};
+use nix::unistd::{mkstemp, read, Pid};
 use nix::{cmsg_space, ioctl_read, ioctl_readwrite, ioctl_write_ptr, NixPath};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -1445,36 +1444,8 @@ fn find_vdso(pid: Option<Pid>) -> Result<(usize, usize), Errno> {
     Err(Errno::EINVAL)
 }
 
-#[derive(Clone, Debug)]
-pub struct Options {
-    listen_display: String,
-}
-
-pub fn options() -> OptionParser<Options> {
-    let listen_display = long("listen-display")
-        .short('l')
-        .help("The X11 display number to listen on")
-        .argument("DISPLAY")
-        .fallback(":0".into());
-
-    construct!(Options { listen_display }).to_options()
-}
-
-fn main() {
-    let options = options().fallback_to_usage().run();
-
-    let display = if options.listen_display.starts_with(':') {
-        options.listen_display[1..].parse::<u32>().ok()
-    } else {
-        None
-    };
-
-    let sock_path = if let Some(display) = display {
-        format!("/tmp/.X11-unix/X{}", display)
-    } else {
-        eprintln!("Invalid --listen-display value");
-        exit(1)
-    };
+pub fn start_x11bridge(display: u32) {
+    let sock_path = format!("/tmp/.X11-unix/X{}", display);
 
     // Look for a syscall instruction in the vDSO. We assume all processes map
     // the same vDSO (which should be true if they are running under the same
@@ -1495,21 +1466,7 @@ fn main() {
 
     let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
     _ = fs::remove_file(&sock_path);
-    let resuid = getresuid().unwrap();
-    let resgid = getresgid().unwrap();
-    if resuid.real != resuid.effective {
-        seteuid(resuid.real).unwrap();
-    }
-    if resgid.real != resgid.effective {
-        setegid(resgid.real).unwrap()
-    }
     let listen_sock = UnixListener::bind(sock_path).unwrap();
-    if resuid.real != resuid.effective {
-        seteuid(resuid.effective).unwrap();
-    }
-    if resgid.real != resgid.effective {
-        setegid(resgid.effective).unwrap()
-    }
     epoll
         .add(
             &listen_sock,
@@ -1638,15 +1595,5 @@ fn main() {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_options() {
-        options().check_invariants(false)
     }
 }
