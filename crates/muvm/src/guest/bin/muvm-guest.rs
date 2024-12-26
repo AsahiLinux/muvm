@@ -1,11 +1,12 @@
 use std::os::fd::AsFd;
+use std::panic::catch_unwind;
 use std::process::Command;
-use std::{cmp, env};
+use std::{cmp, env, thread};
 
 use anyhow::{Context, Result};
-use muvm::env::find_muvm_exec;
 use muvm::guest::cli_options::options;
 use muvm::guest::fex::setup_fex;
+use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
 use muvm::guest::net::configure_network;
 use muvm::guest::server::server_main;
@@ -60,12 +61,6 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    let muvm_hidpipe_path = find_muvm_exec("muvm-hidpipe")?;
-    Command::new(muvm_hidpipe_path)
-        .arg(format!("{}", options.uid))
-        .spawn()
-        .context("Failed to execute `muvm-hidpipe` as child process")?;
-
     let run_path = match setup_user(options.username, options.uid, options.gid) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
@@ -78,6 +73,13 @@ fn main() -> Result<()> {
     setup_socket_proxy(pulse_path, 3333)?;
 
     setup_x11_forwarding(run_path)?;
+
+    let uid = options.uid.as_raw();
+    thread::spawn(move || {
+        if catch_unwind(|| start_hidpipe(uid)).is_err() {
+            eprintln!("hidpipe thread crashed, input device passthrough will no longer function");
+        }
+    });
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
