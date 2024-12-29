@@ -330,27 +330,6 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    // Forward the native X11 display into the guest as a socket
-    if let Ok(x11_display) = env::var("DISPLAY") {
-        if let Some(x11_display) = x11_display.strip_prefix(':') {
-            let socket_path = Path::new("/tmp/.X11-unix/").join(format!("X{x11_display}"));
-            if socket_path.exists() {
-                let socket_path = CString::new(
-                    socket_path
-                        .to_str()
-                        .expect("socket_path should not contain invalid UTF-8"),
-                )
-                .context("Failed to process dynamic socket path as it contains NUL character")?;
-                // SAFETY: `socket_path` is a pointer to a `CString` with long enough lifetime.
-                let err = unsafe { krun_add_vsock_port(ctx_id, 6000, socket_path.as_ptr()) };
-                if err < 0 {
-                    let err = Errno::from_raw_os_error(-err);
-                    return Err(err).context("Failed to configure vsock for host X11 socket");
-                }
-            }
-        }
-    }
-
     let username = env::var("USER").context("Failed to get username from environment")?;
     let user = User::from_name(&username)
         .map_err(Into::into)
