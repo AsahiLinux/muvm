@@ -315,9 +315,7 @@ pub fn mount_filesystems(merged_rootfs: bool) -> Result<()> {
 
     // Do this last so it can pick up all the submounts made above.
     if let Err(e) = mount_fex_rootfs(merged_rootfs) {
-        println!(
-            "Failed to mount FEX rootfs, carrying on without. Error: {e}"
-        );
+        println!("Failed to mount FEX rootfs, carrying on without. Error: {e}");
     }
 
     Ok(())
