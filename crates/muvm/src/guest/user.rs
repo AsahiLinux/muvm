@@ -3,14 +3,16 @@ use std::fs::{self, Permissions};
 use std::os::unix::fs::{chown, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
+use crate::guest::hidpipe::UINPUT_PATH;
 use anyhow::{anyhow, Context, Result};
-use nix::unistd::{setgid, setuid, Gid, Uid, User};
+use nix::sys::wait::{waitpid, WaitStatus};
+use nix::unistd::{fork, setresgid, setresuid, ForkResult, Gid, Uid, User};
 
 pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
     setup_directories(uid, gid)?;
 
-    setgid(gid).context("Failed to setgid")?;
-    setuid(uid).context("Failed to setuid")?;
+    setresgid(gid, gid, Gid::from(0)).context("Failed to setgid")?;
+    setresuid(uid, uid, Uid::from(0)).context("Failed to setuid")?;
 
     let path = tempfile::Builder::new()
         .prefix(&format!("muvm-run-{uid}-"))
@@ -59,5 +61,26 @@ fn setup_directories(uid: Uid, gid: Gid) -> Result<()> {
             .context("Failed to chown `/dev/vsock`")?;
     }
 
+    chown(UINPUT_PATH, Some(uid.into()), Some(gid.into()))?;
+
     Ok(())
+}
+
+/// # Safety
+/// f will be run in post-fork environment, and so must be async signal safe
+pub unsafe fn run_as_root(f: impl FnOnce() -> i32) -> Result<i32> {
+    // SAFETY: child only calls _exit, setuid, and f, all are async signal safe
+    match unsafe { fork()? } {
+        ForkResult::Child => {
+            // SAFETY: _exit and setuid are safe as no pointers are involved
+            unsafe {
+                nix::libc::setuid(0);
+                nix::libc::_exit(f());
+            }
+        },
+        ForkResult::Parent { child } => match waitpid(child, None)? {
+            WaitStatus::Exited(_, code) => Ok(code),
+            e => Err(anyhow!("Unexpected status: {:?}", e)),
+        },
+    }
 }

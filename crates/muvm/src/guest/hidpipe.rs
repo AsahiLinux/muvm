@@ -1,3 +1,8 @@
+use crate::guest::user;
+use crate::hidpipe_common::{
+    empty_input_event, struct_to_socket, AddDevice, ClientHello, FFErase, FFUpload, InputEvent,
+    MessageType, RemoveDevice, ServerHello,
+};
 use input_linux::bitmask::BitmaskTrait;
 use input_linux::{
     AbsoluteAxis, AbsoluteInfo, Bitmask, EventKind, ForceFeedbackKind, InputProperty, Key, LedKind,
@@ -7,20 +12,16 @@ use input_linux_sys::{
     ff_effect, ff_replay, ff_trigger, input_absinfo, input_id, uinput_abs_setup, uinput_ff_erase,
     uinput_ff_upload, uinput_setup,
 };
-use muvm::hidpipe_common::{
-    empty_input_event, struct_to_socket, AddDevice, ClientHello, FFErase, FFUpload, InputEvent,
-    MessageType, RemoveDevice, ServerHello,
-};
 use nix::errno::Errno;
 use nix::libc::{c_char, O_NONBLOCK};
 use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags, EpollTimeout};
 use nix::sys::socket::{connect, socket, AddressFamily, SockFlag, SockType, VsockAddr};
 use std::collections::HashMap;
-use std::env;
+use std::ffi::CString;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{chown, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixStream;
 use std::{mem, slice};
 
@@ -29,6 +30,7 @@ const REMOVE_DEVICE: u32 = MessageType::RemoveDevice as u32;
 const INPUT_EVENT: u32 = MessageType::InputEvent as u32;
 const FF_UPLOAD: u32 = MessageType::FFUpload as u32;
 const FF_ERASE: u32 = MessageType::FFErase as u32;
+pub const UINPUT_PATH: &str = "/dev/uinput";
 
 fn bitmask_from_slice<T, A>(s: &T::Array) -> Bitmask<T>
 where
@@ -53,7 +55,7 @@ fn init_uinput(sock: &mut UnixStream, user_id: u32) -> (u64, UInputHandle<File>)
             .read(true)
             .write(true)
             .custom_flags(O_NONBLOCK)
-            .open("/dev/uinput")
+            .open(UINPUT_PATH)
             .unwrap(),
     );
     for evbit in bitmask_from_slice::<EventKind, _>(&add_dev.evbits).iter() {
@@ -119,7 +121,18 @@ fn init_uinput(sock: &mut UnixStream, user_id: u32) -> (u64, UInputHandle<File>)
         })
         .unwrap();
     uinput.dev_create().unwrap();
-    chown(uinput.evdev_path().unwrap(), Some(user_id), Some(0)).unwrap();
+    let ev_path = CString::new(
+        uinput
+            .evdev_path()
+            .unwrap()
+            .into_os_string()
+            .into_encoded_bytes(),
+    )
+    .unwrap();
+    // SAFETY: chown is async signal safe
+    unsafe {
+        user::run_as_root(|| nix::libc::chown(ev_path.as_ptr(), user_id, 0)).unwrap();
+    }
     (add_dev.id, uinput)
 }
 
@@ -140,8 +153,7 @@ fn ff_effect_empty() -> ff_effect {
     }
 }
 
-fn main() {
-    let user_id = env::args().nth(1).unwrap().parse::<u32>().unwrap();
+pub fn start_hidpipe(user_id: u32) {
     let sock_fd = socket(
         AddressFamily::Vsock,
         SockType::Stream,

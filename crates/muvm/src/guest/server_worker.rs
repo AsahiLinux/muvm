@@ -16,7 +16,7 @@ use log::{debug, error};
 use nix::errno::Errno;
 use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags, EpollTimeout};
 use nix::sys::socket::{connect, socket, AddressFamily, SockFlag, SockType, VsockAddr};
-use nix::unistd::{pipe, setsid};
+use nix::unistd::{pipe, setresgid, setresuid, setsid, Gid, Uid};
 use rustix::process::ioctl_tiocsctty;
 use rustix::pty::{ptsname, unlockpt};
 use rustix::termios::{tcsetwinsize, Winsize};
@@ -29,6 +29,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt as _;
 use uuid::Uuid;
 
+use crate::guest::user;
 use crate::utils::launch::Launch;
 use crate::utils::stdio::make_stdout_stderr;
 use crate::utils::tty::*;
@@ -205,6 +206,7 @@ async fn handle_connection(
         env,
         vsock_port,
         tty,
+        privileged,
     } = read_request(&mut stream).await?;
     debug!(command:?, command_args:?, env:?; "received launch request");
     if cookie != server_cookie {
@@ -216,18 +218,38 @@ async fn handle_connection(
     }
 
     if command == Path::new("/muvmdropcaches") {
-        let mut file = File::options()
-            .write(true)
-            .open("/proc/sys/vm/drop_caches")
-            .context("Failed to open /proc/sys/vm/drop_caches for writing")?;
-
-        {
-            file.write_all(b"1")
-                .context("Failed to write to /proc/sys/vm/drop_caches")?;
-        }
-        stream.write_all(b"OK").await.ok();
-        stream.flush().await.ok();
-        return Ok(ConnRequest::DropCaches);
+        // SAFETY: everything below should be async signal safe
+        let code = unsafe {
+            user::run_as_root(|| {
+                let fd = nix::libc::open(c"/proc/sys/vm/drop_caches".as_ptr(), nix::libc::O_WRONLY);
+                if fd < 0 {
+                    return 1;
+                }
+                let data = b"1";
+                let written = nix::libc::write(fd, data.as_ptr() as *const _, data.len()) as usize;
+                if written == data.len() {
+                    0
+                } else {
+                    2
+                }
+            })
+            .context("Failed to drop caches")?
+        };
+        return match code {
+            0 => {
+                stream.write_all(b"OK").await.ok();
+                stream.flush().await.ok();
+                Ok(ConnRequest::DropCaches)
+            },
+            1 => Err(anyhow!(
+                "Failed to open /proc/sys/vm/drop_caches for writing"
+            )),
+            2 => Err(anyhow!("Failed to write to /proc/sys/vm/drop_caches")),
+            e => Err(anyhow!(
+                "Unexpected return status when attempting to drop caches: {}",
+                e
+            )),
+        };
     }
 
     envs.extend(env);
@@ -272,6 +294,15 @@ async fn handle_connection(
             cmd.pre_exec(|| {
                 setsid()?;
                 ioctl_tiocsctty(io::stdin())?;
+                Ok(())
+            });
+        }
+    }
+    if privileged {
+        unsafe {
+            cmd.pre_exec(|| {
+                setresuid(Uid::from(0), Uid::from(0), Uid::from(0))?;
+                setresgid(Gid::from(0), Gid::from(0), Gid::from(0))?;
                 Ok(())
             });
         }
