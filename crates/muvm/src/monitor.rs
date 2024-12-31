@@ -6,7 +6,6 @@ use std::time;
 use anyhow::Result;
 use log::debug;
 use procfs::{Current, Meminfo};
-use uuid::Uuid;
 
 use crate::launch::request_launch;
 
@@ -33,27 +32,18 @@ impl From<GuestPressure> for u32 {
     }
 }
 
-pub fn spawn_monitor(server_port: u32, cookie: Uuid) {
-    thread::spawn(move || run(server_port, cookie));
+pub fn spawn_monitor() {
+    thread::spawn(run);
 }
 
-fn set_guest_pressure(server_port: u32, cookie: Uuid, pressure: GuestPressure) -> Result<()> {
+fn set_guest_pressure(pressure: GuestPressure) -> Result<()> {
     if pressure == GuestPressure::Critical {
         debug!("requesting the guest to drop its caches");
         // This is a fake command that tells muvm-server to write to "/proc/sys/vm/drop_caches"
         let command = PathBuf::from("/muvmdropcaches");
         let command_args = vec![];
         let env = HashMap::new();
-        request_launch(
-            server_port,
-            cookie,
-            command,
-            command_args,
-            env,
-            0,
-            false,
-            true,
-        )?;
+        request_launch(command, command_args, env, 0, false, true)?;
     }
 
     let wsf: u32 = pressure.into();
@@ -62,19 +52,10 @@ fn set_guest_pressure(server_port: u32, cookie: Uuid, pressure: GuestPressure) -
     let command = PathBuf::from("/sbin/sysctl");
     let command_args = vec![format!("vm.watermark_scale_factor={}", wsf)];
     let env = HashMap::new();
-    request_launch(
-        server_port,
-        cookie,
-        command,
-        command_args,
-        env,
-        0,
-        false,
-        true,
-    )
+    request_launch(command, command_args, env, 0, false, true)
 }
 
-fn run(server_port: u32, cookie: Uuid) {
+fn run() {
     let mut guest_pressure = GuestPressure::None;
     loop {
         let meminfo = Meminfo::current().ok();
@@ -100,8 +81,7 @@ fn run(server_port: u32, cookie: Uuid) {
                 debug!("Pressure at {:?}", new_pressure);
 
                 if new_pressure != guest_pressure {
-                    if let Err(err) = set_guest_pressure(server_port, cookie, new_pressure.clone())
-                    {
+                    if let Err(err) = set_guest_pressure(new_pressure.clone()) {
                         println!("Failed to set the new pressure in the guest: {err}");
                     } else {
                         guest_pressure = new_pressure;

@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::UnixStream as StdUnixStream;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
@@ -21,13 +21,12 @@ use rustix::process::ioctl_tiocsctty;
 use rustix::pty::{ptsname, unlockpt};
 use rustix::termios::{tcsetwinsize, Winsize};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufStream};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{UnixListener, UnixStream};
 use tokio::process::{Child, Command};
 use tokio::sync::watch;
 use tokio::task::{JoinError, JoinSet};
-use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::StreamExt as _;
-use uuid::Uuid;
 
 use crate::guest::user;
 use crate::utils::launch::Launch;
@@ -45,8 +44,7 @@ pub enum ConnRequest {
 
 #[derive(Debug)]
 pub struct Worker {
-    cookie: Uuid,
-    listener_stream: TcpListenerStream,
+    listener_stream: UnixListenerStream,
     state_tx: watch::Sender<State>,
     child_set: JoinSet<(PathBuf, ChildResult, Option<OwnedFd>)>,
 }
@@ -60,10 +58,9 @@ pub struct State {
 type ChildResult = Result<ExitStatus, io::Error>;
 
 impl Worker {
-    pub fn new(cookie: Uuid, listener: TcpListener, state_tx: watch::Sender<State>) -> Self {
+    pub fn new(listener: UnixListener, state_tx: watch::Sender<State>) -> Self {
         Worker {
-            cookie,
-            listener_stream: TcpListenerStream::new(listener),
+            listener_stream: UnixListenerStream::new(listener),
             state_tx,
             child_set: JoinSet::new(),
         }
@@ -84,7 +81,7 @@ impl Worker {
                     };
                     let stream = BufStream::new(stream);
 
-                    match handle_connection(self.cookie, stream).await {
+                    match handle_connection(stream).await {
                         Ok(request) => match request {
                             ConnRequest::DropCaches => {},
                             ConnRequest::ExecuteCommand {command, mut child, stop_pipe } => {
@@ -180,7 +177,7 @@ impl Default for State {
     }
 }
 
-async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
+async fn read_request(stream: &mut BufStream<UnixStream>) -> Result<Launch> {
     let mut buf = String::new();
     loop {
         if stream.read_line(&mut buf).await? == 0 {
@@ -193,14 +190,10 @@ async fn read_request(stream: &mut BufStream<TcpStream>) -> Result<Launch> {
     }
 }
 
-async fn handle_connection(
-    server_cookie: Uuid,
-    mut stream: BufStream<TcpStream>,
-) -> Result<ConnRequest> {
+async fn handle_connection(mut stream: BufStream<UnixStream>) -> Result<ConnRequest> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
     let Launch {
-        cookie,
         command,
         command_args,
         env,
@@ -209,13 +202,6 @@ async fn handle_connection(
         privileged,
     } = read_request(&mut stream).await?;
     debug!(command:?, command_args:?, env:?; "received launch request");
-    if cookie != server_cookie {
-        debug!("invalid cookie in launch request");
-        let msg = "Invalid cookie";
-        stream.write_all(msg.as_bytes()).await.ok();
-        stream.flush().await.ok();
-        return Err(anyhow!(msg));
-    }
 
     if command == Path::new("/muvmdropcaches") {
         // SAFETY: everything below should be async signal safe
@@ -370,7 +356,7 @@ fn run_io_guest(
         vsock_fd.as_raw_fd(),
         &VsockAddr::new(nix::libc::VMADDR_CID_HOST, vsock_port),
     )?;
-    let mut vsock = UnixStream::from(vsock_fd);
+    let mut vsock = StdUnixStream::from(vsock_fd);
     let epoll = Epoll::new(EpollCreateFlags::empty())?;
     epoll.add(&stdout, EpollEvent::new(EpollFlags::EPOLLIN, 1))?;
     if stderr.is_some() {

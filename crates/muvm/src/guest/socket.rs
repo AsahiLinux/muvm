@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use crate::utils::env::find_in_path;
 use crate::utils::stdio::make_stdout_stderr;
 
-pub fn setup_socket_proxy<P>(socket_path: P, port: u16) -> Result<()>
+pub fn setup_socket_proxy<P>(socket_path: P, port: u32) -> Result<()>
 where
     P: AsRef<Path>,
 {

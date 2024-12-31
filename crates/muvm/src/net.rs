@@ -14,7 +14,7 @@ where
     Ok(UnixStream::connect(passt_socket_path)?)
 }
 
-pub fn start_passt(server_port: u32) -> Result<UnixStream> {
+pub fn start_passt() -> Result<UnixStream> {
     // SAFETY: The child process should not inherit the file descriptor of
     // `parent_socket`. There is no documented guarantee of this, but the
     // implementation as of writing atomically sets `SOCK_CLOEXEC`.
@@ -39,9 +39,7 @@ pub fn start_passt(server_port: u32) -> Result<UnixStream> {
     // as it will now be owned by the child process.
     // See https://doc.rust-lang.org/std/io/index.html#io-safety
     let child = Command::new("passt")
-        .args(["-q", "-f", "-t"])
-        .arg(format!("{server_port}:{server_port}"))
-        .arg("--fd")
+        .args(["-q", "-f", "--fd"])
         .arg(format!("{}", child_fd.into_raw_fd()))
         .spawn();
     if let Err(err) = child {

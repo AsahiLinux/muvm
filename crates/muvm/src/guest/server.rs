@@ -1,26 +1,41 @@
 use crate::guest::server_worker::{State, Worker};
+use crate::utils::launch::MUVM_GUEST_SOCKET;
 use anyhow::Result;
 use log::error;
+use nix::libc::VMADDR_CID_ANY;
+use nix::sys::socket::{
+    bind, listen, socket, AddressFamily, Backlog, SockFlag, SockType, VsockAddr,
+};
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixListener as StdUnixListener;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
-use tokio::net::TcpListener;
+use tokio::net::UnixListener;
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt as _;
-use uuid::Uuid;
 
-pub async fn server_main(
-    server_port: u32,
-    cookie: Uuid,
-    command: PathBuf,
-    command_args: Vec<String>,
-) -> Result<()> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{server_port}")).await?;
+pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<()> {
+    let sock_fd = socket(
+        AddressFamily::Vsock,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )
+    .unwrap();
+    bind(
+        sock_fd.as_raw_fd(),
+        &VsockAddr::new(VMADDR_CID_ANY, MUVM_GUEST_SOCKET),
+    )?;
+    listen(&sock_fd, Backlog::MAXCONN)?;
+    let std_listener = StdUnixListener::from(sock_fd);
+    std_listener.set_nonblocking(true)?;
+    let listener = UnixListener::from_std(std_listener)?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
-        let mut worker = Worker::new(cookie, listener, state_tx);
+        let mut worker = Worker::new(listener, state_tx);
         worker.run().await;
     });
     let command_status = Command::new(&command).args(command_args).status();

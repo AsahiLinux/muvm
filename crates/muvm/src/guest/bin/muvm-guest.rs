@@ -15,7 +15,7 @@ use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
 use muvm::guest::x11bridge::start_x11bridge;
-use muvm::utils::launch::GuestConfiguration;
+use muvm::utils::launch::{GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
@@ -94,7 +94,7 @@ fn main() -> Result<()> {
     std::fs::create_dir(&pulse_path)
         .context("Failed to create `pulse` directory in `XDG_RUNTIME_DIR`")?;
     let pulse_path = pulse_path.join("native");
-    setup_socket_proxy(pulse_path, 3333)?;
+    setup_socket_proxy(pulse_path, PULSE_SOCKET)?;
 
     if let Some(host_display) = options.host_display {
         setup_x11_forwarding(run_path, &host_display)?;
@@ -108,13 +108,5 @@ fn main() -> Result<()> {
     });
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        server_main(
-            options.server_port,
-            options.server_cookie,
-            options.command.command,
-            options.command.command_args,
-        )
-        .await
-    })
+    rt.block_on(async { server_main(options.command.command, options.command.command_args).await })
 }
