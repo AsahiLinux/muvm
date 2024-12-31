@@ -13,12 +13,11 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
-    pub root_server_port: u32,
-    pub server_port: u32,
     pub fex_images: Vec<String>,
-    pub sommelier: bool,
     pub interactive: bool,
     pub tty: bool,
+    pub privileged: bool,
+    pub publish_ports: Vec<String>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -94,21 +93,6 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let root_server_port = long("root-server-port")
-        .short('r')
-        .help("Set the port to be used in root server mode")
-        .argument("ROOT_SERVER_PORT")
-        .fallback(3335)
-        .display_fallback();
-    let server_port = long("server-port")
-        .short('p')
-        .help("Set the port to be used in server mode")
-        .argument("SERVER_PORT")
-        .fallback(3334)
-        .display_fallback();
-    let sommelier = long("sommelier")
-        .help("Use sommelier + XWayland instead of x11bridge")
-        .switch();
     let interactive = long("interactive")
         .short('i')
         .help("Attach to the command's stdin/out after starting it")
@@ -117,6 +101,21 @@ pub fn options() -> OptionParser<Options> {
         .short('t')
         .help("Allocate a tty for the command")
         .switch();
+    let privileged = long("privileged")
+        .help(
+            "Run the command as root inside the vm.
+        This notably does not allow root access to the host fs.",
+        )
+        .switch();
+    let publish_ports = long("publish")
+        .short('p')
+        .help(
+            "
+    Publish a guest’s port, or range of ports, to the host.
+        The syntax is similar to podman/docker.",
+        )
+        .argument::<String>("[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]")
+        .many();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -130,12 +129,11 @@ pub fn options() -> OptionParser<Options> {
         mem,
         vram,
         passt_socket,
-        root_server_port,
-        server_port,
         fex_images,
-        sommelier,
         interactive,
         tty,
+        privileged,
+        publish_ports,
         // positionals
         command,
         command_args,

@@ -1,54 +1,41 @@
-use std::env;
+use crate::guest::server_worker::{State, Worker};
+use crate::utils::launch::MUVM_GUEST_SOCKET;
+use anyhow::Result;
+use log::error;
+use nix::libc::VMADDR_CID_ANY;
+use nix::sys::socket::{
+    bind, listen, socket, AddressFamily, Backlog, SockFlag, SockType, VsockAddr,
+};
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixListener as StdUnixListener;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
-
-use anyhow::{Context, Result};
-use log::error;
-use muvm::server::cli_options::options;
-use muvm::server::worker::{State, Worker};
-use nix::unistd::geteuid;
-use tokio::net::TcpListener;
+use tokio::net::UnixListener;
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt as _;
-use uuid::Uuid;
 
-fn main() -> Result<()> {
-    let cookie = env::var("MUVM_SERVER_COOKIE")
-        .with_context(|| "Could find server cookie as an environment variable")?;
-
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async { tokio_main(cookie).await })
-}
-
-async fn tokio_main(cookie: String) -> Result<()> {
-    env_logger::init();
-
-    let cookie = Uuid::try_parse(&cookie).context("Couldn't parse cookie as UUID v7")?;
-    let uid: u32 = geteuid().into();
-
-    let (server_port, command, command_args) = if uid == 0 {
-        let server_port = if let Ok(server_port) = env::var("MUVM_ROOT_SERVER_PORT") {
-            server_port.parse()?
-        } else {
-            3335
-        };
-        (
-            server_port,
-            PathBuf::from("/bin/sleep"),
-            vec!["inf".to_string()],
-        )
-    } else {
-        let options = options().run();
-        (options.server_port, options.command, options.command_args)
-    };
-
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", server_port)).await?;
+pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<()> {
+    let sock_fd = socket(
+        AddressFamily::Vsock,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )
+    .unwrap();
+    bind(
+        sock_fd.as_raw_fd(),
+        &VsockAddr::new(VMADDR_CID_ANY, MUVM_GUEST_SOCKET),
+    )?;
+    listen(&sock_fd, Backlog::MAXCONN)?;
+    let std_listener = StdUnixListener::from(sock_fd);
+    std_listener.set_nonblocking(true)?;
+    let listener = UnixListener::from_std(std_listener)?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
-        let mut worker = Worker::new(cookie, listener, state_tx);
+        let mut worker = Worker::new(listener, state_tx);
         worker.run().await;
     });
     let command_status = Command::new(&command).args(command_args).status();
