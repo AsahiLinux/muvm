@@ -2,21 +2,19 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
-use uuid::Uuid;
 
 use crate::env::prepare_env_vars;
 use crate::tty::{run_io_host, RawTerminal};
 use crate::utils::launch::Launch;
 use nix::unistd::unlink;
 use std::ops::Range;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 
 pub const DYNAMIC_PORT_RANGE: Range<u32> = 50000..50200;
@@ -24,7 +22,6 @@ pub const DYNAMIC_PORT_RANGE: Range<u32> = 50000..50200;
 pub enum LaunchResult {
     LaunchRequested(ExitCode),
     LockAcquired {
-        cookie: Uuid,
         lock_file: File,
         command: PathBuf,
         command_args: Vec<String>,
@@ -86,10 +83,7 @@ fn acquire_socket_lock() -> Result<(File, u32)> {
     Err(anyhow!("Ran out of ports."))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn wrapped_launch(
-    server_port: u32,
-    cookie: Uuid,
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
@@ -98,16 +92,7 @@ fn wrapped_launch(
     privileged: bool,
 ) -> Result<ExitCode> {
     if !interactive {
-        request_launch(
-            server_port,
-            cookie,
-            command,
-            command_args,
-            env,
-            0,
-            false,
-            privileged,
-        )?;
+        request_launch(command, command_args, env, 0, false, privileged)?;
         return Ok(ExitCode::from(0));
     }
     let run_path = env::var("XDG_RUNTIME_DIR")
@@ -125,23 +110,13 @@ fn wrapped_launch(
     } else {
         None
     };
-    request_launch(
-        server_port,
-        cookie,
-        command,
-        command_args,
-        env,
-        vsock_port,
-        tty,
-        privileged,
-    )?;
+    request_launch(command, command_args, env, vsock_port, tty, privileged)?;
     let code = run_io_host(listener, tty)?;
     drop(raw_tty);
     Ok(ExitCode::from(code))
 }
 
 pub fn launch_or_lock(
-    server_port: u32,
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
@@ -149,30 +124,9 @@ pub fn launch_or_lock(
     tty: bool,
     privileged: bool,
 ) -> Result<LaunchResult> {
-    let running_server_port = env::var("MUVM_SERVER_PORT").ok();
-    if let Some(port) = running_server_port {
-        let port: u32 = port.parse()?;
-        let env = prepare_env_vars(env)?;
-        let cookie = read_cookie()?;
-        return match wrapped_launch(
-            port,
-            cookie,
-            command,
-            command_args,
-            env,
-            interactive,
-            tty,
-            privileged,
-        ) {
-            Err(err) => Err(anyhow!("could not request launch to server: {err}")),
-            Ok(code) => Ok(LaunchResult::LaunchRequested(code)),
-        };
-    }
-
-    let (lock_file, cookie) = lock_file()?;
+    let lock_file = lock_file()?;
     match lock_file {
         Some(lock_file) => Ok(LaunchResult::LockAcquired {
-            cookie,
             lock_file,
             command,
             command_args,
@@ -183,8 +137,6 @@ pub fn launch_or_lock(
             let mut tries = 0;
             loop {
                 match wrapped_launch(
-                    server_port,
-                    cookie,
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
@@ -211,52 +163,32 @@ pub fn launch_or_lock(
     }
 }
 
-fn read_cookie() -> Result<Uuid> {
-    let run_path = env::var("XDG_RUNTIME_DIR")
-        .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
-    let lock_path = Path::new(&run_path).join("muvm.lock");
-    let data: Vec<u8> = fs::read(lock_path).context("Failed to read lock file")?;
-    assert!(data.len() == 16);
-
-    Uuid::from_slice(&data).context("Failed to read cookie from lock file")
-}
-
-fn lock_file() -> Result<(Option<File>, Uuid)> {
+fn lock_file() -> Result<Option<File>> {
     let run_path = env::var("XDG_RUNTIME_DIR")
         .context("Failed to read XDG_RUNTIME_DIR environment variable")?;
     let lock_path = Path::new(&run_path).join("muvm.lock");
 
-    let mut lock_file = if !lock_path.exists() {
+    let lock_file = if !lock_path.exists() {
         let lock_file = File::create(lock_path).context("Failed to create lock file")?;
         flock(&lock_file, FlockOperation::NonBlockingLockExclusive)
             .context("Failed to acquire exclusive lock on new lock file")?;
         lock_file
     } else {
-        let mut lock_file = File::options()
+        let lock_file = File::options()
             .write(true)
             .read(true)
             .open(lock_path)
             .context("Failed to create lock file")?;
         let ret = flock(&lock_file, FlockOperation::NonBlockingLockExclusive);
         if ret.is_err() {
-            let mut data: Vec<u8> = Vec::with_capacity(16);
-            lock_file.read_to_end(&mut data)?;
-            let cookie = Uuid::from_slice(&data).context("Failed to read cookie from lock file")?;
-            return Ok((None, cookie));
+            return Ok(None);
         }
         lock_file
     };
-
-    let cookie = Uuid::now_v7();
-    lock_file.set_len(0)?;
-    lock_file.write_all(cookie.as_bytes())?;
-    Ok((Some(lock_file), cookie))
+    Ok(Some(lock_file))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn request_launch(
-    server_port: u32,
-    cookie: Uuid,
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
@@ -264,11 +196,12 @@ pub fn request_launch(
     tty: bool,
     privileged: bool,
 ) -> Result<()> {
-    let mut stream =
-        TcpStream::connect(format!("127.0.0.1:{server_port}")).map_err(LaunchError::Connection)?;
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
+    let socket_path = Path::new(&run_path).join("krun/server");
+    let mut stream = UnixStream::connect(socket_path).map_err(LaunchError::Connection)?;
 
     let launch = Launch {
-        cookie,
         command,
         command_args,
         env,

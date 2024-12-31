@@ -13,7 +13,6 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
-    pub server_port: u32,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
     pub interactive: bool,
@@ -98,12 +97,6 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let server_port = long("server-port")
-        .short('p')
-        .help("Set the port to be used in server mode")
-        .argument("SERVER_PORT")
-        .fallback(3334)
-        .display_fallback();
     let interactive = long("interactive")
         .short('i')
         .help("Attach to the command's stdin/out after starting it")
@@ -131,7 +124,6 @@ pub fn options() -> OptionParser<Options> {
         mem,
         vram,
         passt_socket,
-        server_port,
         fex_images,
         merged_rootfs,
         interactive,

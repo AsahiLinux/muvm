@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::env;
 use std::ffi::{c_char, CString};
 use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
 use std::process::ExitCode;
+use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
-    krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_create_ctx, krun_set_env,
-    krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
+    krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_add_vsock_port2, krun_create_ctx,
+    krun_set_env, krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
     krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
     VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
 };
@@ -22,7 +22,9 @@ use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
-use muvm::utils::launch::{GuestConfiguration, Launch};
+use muvm::utils::launch::{
+    GuestConfiguration, Launch, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET,
+};
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
 use rustix::io::Errno;
@@ -72,8 +74,7 @@ fn main() -> Result<ExitCode> {
 
     let options = options().fallback_to_usage().run();
 
-    let (cookie, _lock_file, command, command_args, env) = match launch_or_lock(
-        options.server_port,
+    let (_lock_file, command, command_args, env) = match launch_or_lock(
         options.command,
         options.command_args,
         options.env,
@@ -87,12 +88,11 @@ fn main() -> Result<ExitCode> {
             return Ok(code);
         },
         LaunchResult::LockAcquired {
-            cookie,
             lock_file,
             command,
             command_args,
             env,
-        } => (cookie, lock_file, command, command_args, env),
+        } => (lock_file, command, command_args, env),
     };
 
     let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
@@ -264,9 +264,7 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(options.server_port)
-                .context("Failed to start `passt`")?
-                .into()
+            start_passt().context("Failed to start `passt`")?.into()
         };
         // SAFETY: `passt_fd` is an `OwnedFd` and consumed to prevent closing on drop.
         // See https://doc.rust-lang.org/std/io/index.html#io-safety
@@ -287,7 +285,7 @@ fn main() -> Result<ExitCode> {
             )
             .context("Failed to process `pulse/native` path as it contains NUL character")?;
             // SAFETY: `pulse_path` is a pointer to a `CString` with long enough lifetime.
-            let err = unsafe { krun_add_vsock_port(ctx_id, 3333, pulse_path.as_ptr()) };
+            let err = unsafe { krun_add_vsock_port(ctx_id, PULSE_SOCKET, pulse_path.as_ptr()) };
             if err < 0 {
                 let err = Errno::from_raw_os_error(-err);
                 return Err(err).context("Failed to configure vsock for pulse socket");
@@ -304,7 +302,7 @@ fn main() -> Result<ExitCode> {
         .context("Failed to process `hidpipe` path as it contains NUL character")?;
 
         // SAFETY: `hidpipe_path` is a pointer to a `CString` with long enough lifetime.
-        let err = unsafe { krun_add_vsock_port(ctx_id, 3334, hidpipe_path.as_ptr()) };
+        let err = unsafe { krun_add_vsock_port(ctx_id, HIDPIPE_SOCKET, hidpipe_path.as_ptr()) };
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure vsock for hidpipe socket");
@@ -327,6 +325,22 @@ fn main() -> Result<ExitCode> {
                 let err = Errno::from_raw_os_error(-err);
                 return Err(err).context("Failed to configure vsock for dynamic socket");
             }
+        }
+
+        let server_path = Path::new(&run_path).join("krun/server");
+        _ = fs::remove_file(&server_path);
+        let server_path = CString::new(
+            server_path
+                .to_str()
+                .expect("server_path should not contain invalid UTF-8"),
+        )
+        .context("Failed to process `muvm-guest` path as it contains NUL characters")?;
+        // SAFETY: `server_path` is a pointer to a `CString` with long enough lifetime.
+        let err =
+            unsafe { krun_add_vsock_port2(ctx_id, MUVM_GUEST_SOCKET, server_path.as_ptr(), true) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure vsock for guest server socket");
         }
     }
 
@@ -366,7 +380,6 @@ fn main() -> Result<ExitCode> {
     let display = env::var("DISPLAY").ok();
     let guest_config = GuestConfiguration {
         command: Launch {
-            cookie,
             command,
             command_args,
             env: HashMap::new(),
@@ -374,12 +387,10 @@ fn main() -> Result<ExitCode> {
             tty: false,
             privileged: false,
         },
-        server_port: options.server_port,
         username,
         uid: getuid().as_raw(),
         gid: getgid().as_raw(),
         host_display: display,
-        server_cookie: cookie,
         merged_rootfs: options.merged_rootfs,
     };
     let mut muvm_config_file = NamedTempFile::new()
@@ -449,7 +460,7 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    spawn_monitor(options.server_port, cookie);
+    spawn_monitor();
 
     {
         // Start and enter the microVM. Unless there is some error while creating the
