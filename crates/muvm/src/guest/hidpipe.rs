@@ -3,6 +3,7 @@ use crate::hidpipe_common::{
     empty_input_event, struct_to_socket, AddDevice, ClientHello, FFErase, FFUpload, InputEvent,
     MessageType, RemoveDevice, ServerHello,
 };
+use crate::utils::launch::HIDPIPE_SOCKET;
 use input_linux::bitmask::BitmaskTrait;
 use input_linux::{
     AbsoluteAxis, AbsoluteInfo, Bitmask, EventKind, ForceFeedbackKind, InputProperty, Key, LedKind,
@@ -161,7 +162,7 @@ pub fn start_hidpipe(user_id: u32) {
         None,
     )
     .unwrap();
-    connect(sock_fd.as_raw_fd(), &VsockAddr::new(2, 3334)).unwrap();
+    connect(sock_fd.as_raw_fd(), &VsockAddr::new(2, HIDPIPE_SOCKET)).unwrap();
     let mut sock = UnixStream::from(sock_fd);
     let c_hello = ClientHello { version: 0 };
     let c_hello_data = unsafe {
