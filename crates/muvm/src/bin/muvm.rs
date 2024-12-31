@@ -264,7 +264,9 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt().context("Failed to start `passt`")?.into()
+            start_passt(&options.publish_ports)
+                .context("Failed to start `passt`")?
+                .into()
         };
         // SAFETY: `passt_fd` is an `OwnedFd` and consumed to prevent closing on drop.
         // See https://doc.rust-lang.org/std/io/index.html#io-safety

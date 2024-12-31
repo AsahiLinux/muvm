@@ -18,6 +18,7 @@ pub struct Options {
     pub interactive: bool,
     pub tty: bool,
     pub privileged: bool,
+    pub publish_ports: Vec<String>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -111,6 +112,15 @@ pub fn options() -> OptionParser<Options> {
         This notably does not allow root access to the host fs.",
         )
         .switch();
+    let publish_ports = long("publish")
+        .short('p')
+        .help(
+            "
+    Publish a guest’s port, or range of ports, to the host.
+        The syntax is similar to podman/docker.",
+        )
+        .argument::<String>("[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]")
+        .many();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -129,6 +139,7 @@ pub fn options() -> OptionParser<Options> {
         interactive,
         tty,
         privileged,
+        publish_ports,
         // positionals
         command,
         command_args,
