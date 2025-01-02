@@ -65,7 +65,7 @@ where
             }
 
             // Check for the correct host display
-            if display != host_display.as_bytes() {
+            if !display.is_empty() && display != host_display.as_bytes() {
                 continue;
             }
 

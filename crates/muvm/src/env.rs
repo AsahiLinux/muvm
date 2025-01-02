@@ -90,6 +90,27 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
     env_map.insert("GTK_IM_MODULE".to_owned(), "xim".to_owned());
     env_map.insert("QT_IM_MODULE".to_owned(), "xim".to_owned());
 
+    // Force a separate Firefox profile, since Firefox in muvm cannot see
+    // the lock from outside the VM and will concurrently launch on the same
+    // profile, corrupting it. This makes Firefox safely work in the VM
+    // (for browser launches).
+    if let Ok(home) = env::var("HOME") {
+        let mut path = PathBuf::new();
+        path.push(home);
+        path.push(".mozilla");
+        path.push("firefox");
+        if path.exists() {
+            path.push("muvm-profile");
+            if !path.exists() {
+                std::fs::create_dir(&path)?;
+            }
+            env_map.insert(
+                "XRE_PROFILE_PATH".to_owned(),
+                path.to_str().unwrap().to_owned(),
+            );
+        }
+    }
+
     for (key, value) in env {
         let value = value.map_or_else(
             || env::var(&key).with_context(|| format!("Failed to get `{key}` env var")),

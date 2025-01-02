@@ -88,8 +88,19 @@ fn mount_fex_rootfs() -> Result<()> {
         if Path::new(base).exists() {
             let json = format!("{{\"Config\":{{\"RootFS\":\"{dir_rootfs}\"}}}}\n");
             let path = base.to_string() + "/Config.json";
+            let host_dir = "/run/muvm-host".to_string() + base;
 
             make_tmpfs(base)?;
+            for entry in read_dir(host_dir).unwrap() {
+                let entry = entry.unwrap();
+                let file_name = entry.file_name();
+                if file_name == "Config.json" {
+                    continue;
+                }
+                let dest = Path::new(base).join(file_name);
+                symlink(entry.path(), dest)?;
+            }
+
             File::create(Path::new(&path))?.write_all(json.as_bytes())?;
         }
     }

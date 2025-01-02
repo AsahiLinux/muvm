@@ -12,10 +12,17 @@ use rustix::fs::{flock, FlockOperation};
 use uuid::Uuid;
 
 use crate::env::prepare_env_vars;
+use crate::tty::{run_io_host, RawTerminal};
 use crate::utils::launch::Launch;
+use nix::unistd::unlink;
+use std::ops::Range;
+use std::os::unix::net::UnixListener;
+use std::process::ExitCode;
+
+pub const DYNAMIC_PORT_RANGE: Range<u32> = 50000..50200;
 
 pub enum LaunchResult {
-    LaunchRequested,
+    LaunchRequested(ExitCode),
     LockAcquired {
         cookie: Uuid,
         lock_file: File,
@@ -50,21 +57,94 @@ impl Display for LaunchError {
     }
 }
 
+fn acquire_socket_lock() -> Result<(File, u32)> {
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
+    let socket_dir = Path::new(&run_path).join("krun/socket");
+    for port in DYNAMIC_PORT_RANGE {
+        let path = socket_dir.join(format!("port-{port}.lock"));
+        return Ok((
+            if !path.exists() {
+                let lock_file = File::create(path).context("Failed to create socket lock")?;
+                flock(&lock_file, FlockOperation::NonBlockingLockExclusive)
+                    .context("Failed to acquire socket lock")?;
+                lock_file
+            } else {
+                let lock_file = File::options()
+                    .write(true)
+                    .read(true)
+                    .open(path)
+                    .context("Failed to open lock file")?;
+                if flock(&lock_file, FlockOperation::NonBlockingLockExclusive).is_err() {
+                    continue;
+                }
+                lock_file
+            },
+            port,
+        ));
+    }
+    Err(anyhow!("Ran out of ports."))
+}
+
+fn wrapped_launch(
+    server_port: u32,
+    cookie: Uuid,
+    command: PathBuf,
+    command_args: Vec<String>,
+    env: HashMap<String, String>,
+    interactive: bool,
+    tty: bool,
+) -> Result<ExitCode> {
+    if !interactive {
+        request_launch(server_port, cookie, command, command_args, env, 0, false)?;
+        return Ok(ExitCode::from(0));
+    }
+    let run_path = env::var("XDG_RUNTIME_DIR")
+        .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
+    let socket_dir = Path::new(&run_path).join("krun/socket");
+    let (_lock, vsock_port) = acquire_socket_lock()?;
+    let path = socket_dir.join(format!("port-{vsock_port}"));
+    _ = unlink(&path);
+    let listener = UnixListener::bind(path).context("Failed to listen on vm socket")?;
+    let raw_tty = if tty {
+        Some(
+            RawTerminal::set()
+                .context("Asked to allocate a tty for the command, but stdin is not a tty")?,
+        )
+    } else {
+        None
+    };
+    request_launch(
+        server_port,
+        cookie,
+        command,
+        command_args,
+        env,
+        vsock_port,
+        tty,
+    )?;
+    let code = run_io_host(listener, tty)?;
+    drop(raw_tty);
+    Ok(ExitCode::from(code))
+}
+
 pub fn launch_or_lock(
     server_port: u32,
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
+    interactive: bool,
+    tty: bool,
 ) -> Result<LaunchResult> {
     let running_server_port = env::var("MUVM_SERVER_PORT").ok();
     if let Some(port) = running_server_port {
         let port: u32 = port.parse()?;
         let env = prepare_env_vars(env)?;
         let cookie = read_cookie()?;
-        if let Err(err) = request_launch(port, cookie, command, command_args, env) {
-            return Err(anyhow!("could not request launch to server: {err}"));
-        }
-        return Ok(LaunchResult::LaunchRequested);
+        return match wrapped_launch(port, cookie, command, command_args, env, interactive, tty) {
+            Err(err) => Err(anyhow!("could not request launch to server: {err}")),
+            Ok(code) => Ok(LaunchResult::LaunchRequested(code)),
+        };
     }
 
     let (lock_file, cookie) = lock_file()?;
@@ -80,12 +160,14 @@ pub fn launch_or_lock(
             let env = prepare_env_vars(env)?;
             let mut tries = 0;
             loop {
-                match request_launch(
+                match wrapped_launch(
                     server_port,
                     cookie,
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
+                    interactive,
+                    tty,
                 ) {
                     Err(err) => match err.downcast_ref::<LaunchError>() {
                         Some(&LaunchError::Connection(_)) => {
@@ -99,7 +181,7 @@ pub fn launch_or_lock(
                             return Err(anyhow!("could not request launch to server: {err}"));
                         },
                     },
-                    Ok(_) => return Ok(LaunchResult::LaunchRequested),
+                    Ok(code) => return Ok(LaunchResult::LaunchRequested(code)),
                 }
             }
         },
@@ -154,6 +236,8 @@ pub fn request_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
+    vsock_port: u32,
+    tty: bool,
 ) -> Result<()> {
     let mut stream =
         TcpStream::connect(format!("127.0.0.1:{server_port}")).map_err(LaunchError::Connection)?;
@@ -163,6 +247,8 @@ pub fn request_launch(
         command,
         command_args,
         env,
+        vsock_port,
+        tty,
     };
 
     stream

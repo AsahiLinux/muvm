@@ -3,6 +3,7 @@ use std::ffi::{c_char, CString};
 use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::Path;
+use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
@@ -16,7 +17,7 @@ use muvm::cli_options::options;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::hidpipe_server::spawn_hidpipe_server;
-use muvm::launch::{launch_or_lock, LaunchResult};
+use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
@@ -59,7 +60,7 @@ fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     env_logger::init();
 
     if getuid().as_raw() == 0 || geteuid().as_raw() == 0 {
@@ -74,11 +75,13 @@ fn main() -> Result<()> {
         options.command,
         options.command_args,
         options.env,
+        options.interactive,
+        options.tty,
     )? {
-        LaunchResult::LaunchRequested => {
+        LaunchResult::LaunchRequested(code) => {
             // There was a muvm instance already running and we've requested it
             // to launch the command successfully, so all the work is done.
-            return Ok(());
+            return Ok(code);
         },
         LaunchResult::LockAcquired {
             cookie,
@@ -129,27 +132,11 @@ fn main() -> Result<()> {
         let sysinfo = sysinfo().context("Failed to get system information")?;
         let ram_total_mib = (sysinfo.ram_total() / (1024 * 1024)) as u32;
 
-        let ram_mib = if let Some(ram_mib) = options.mem {
-            ram_mib
-        } else {
-            // By default, set the microVM RAM to be 80% of the system's RAM.
-            let guest_ram = (ram_total_mib as f64 * 0.8) as u32;
-            // Ensure we leave 3072 MiB free for the host + VRAM to avoid
-            // compromising the host's stability. This mainly applies to systems
-            // with 8GB of RAM.
-            let guest_ram = if ram_total_mib
-                .checked_sub(guest_ram)
-                .context("Failed to calculate the amount of free RAM")?
-                < 3072
-            {
-                ram_total_mib
-                    .checked_sub(3072)
-                    .context("Systems with less than 3072 MiB of RAM are not supported")?
-            } else {
-                guest_ram
-            };
-            MiB::from(guest_ram)
-        };
+        // By default, set the microVM RAM to be 80% of the system's RAM.
+        let ram_mib = options
+            .mem
+            .unwrap_or(MiB::from((ram_total_mib as f64 * 0.8) as u32));
+
         // By default, HK sets the heap size to be half the size of the *guest* memory.
         // Since commit 167744dc it's also possible to override the heap size by setting
         // the HK_SYSMEM environment variable.
@@ -297,6 +284,7 @@ fn main() -> Result<()> {
                 return Err(err).context("Failed to configure vsock for pulse socket");
             }
         }
+
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
         spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
         let hidpipe_path = CString::new(
@@ -311,6 +299,25 @@ fn main() -> Result<()> {
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure vsock for hidpipe socket");
+        }
+
+        let socket_dir = Path::new(&run_path).join("krun/socket");
+        std::fs::create_dir_all(&socket_dir)?;
+        // Dynamic ports: Applications may listen on these sockets as neeeded.
+        for port in DYNAMIC_PORT_RANGE {
+            let socket_path = socket_dir.join(format!("port-{}", port));
+            let socket_path = CString::new(
+                socket_path
+                    .to_str()
+                    .expect("socket_path should not contain invalid UTF-8"),
+            )
+            .context("Failed to process dynamic socket path as it contains NUL character")?;
+            // SAFETY: `socket_path` is a pointer to a `CString` with long enough lifetime.
+            let err = unsafe { krun_add_vsock_port(ctx_id, port, socket_path.as_ptr()) };
+            if err < 0 {
+                let err = Errno::from_raw_os_error(-err);
+                return Err(err).context("Failed to configure vsock for dynamic socket");
+            }
         }
     }
 
@@ -400,8 +407,7 @@ fn main() -> Result<()> {
     );
     env.insert("MUVM_SERVER_COOKIE".to_owned(), cookie.to_string());
 
-    #[cfg(feature = "x11bridge")]
-    if options.direct_x11 {
+    if !options.sommelier {
         let display =
             env::var("DISPLAY").context("X11 forwarding requested but DISPLAY is unset")?;
         env.insert("HOST_DISPLAY".to_string(), display);

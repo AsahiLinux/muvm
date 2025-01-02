@@ -16,7 +16,9 @@ pub struct Options {
     pub root_server_port: u32,
     pub server_port: u32,
     pub fex_images: Vec<String>,
-    pub direct_x11: bool,
+    pub sommelier: bool,
+    pub interactive: bool,
+    pub tty: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -104,19 +106,17 @@ pub fn options() -> OptionParser<Options> {
         .argument("SERVER_PORT")
         .fallback(3334)
         .display_fallback();
-    let direct_x11 = long("direct-x11")
-        .short('x')
-        .help("Use direct X11 forwarding instead of sommelier + XWayland")
+    let sommelier = long("sommelier")
+        .help("Use sommelier + XWayland instead of x11bridge")
         .switch();
-
-    #[cfg(not(feature = "x11bridge"))]
-    let direct_x11 = direct_x11
-        .guard(
-            |x| !*x,
-            "--direct-x11 requires the `x11bridge` crate feature",
-        )
-        .hide();
-
+    let interactive = long("interactive")
+        .short('i')
+        .help("Attach to the command's stdin/out after starting it")
+        .switch();
+    let tty = long("tty")
+        .short('t')
+        .help("Allocate a tty for the command")
+        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -133,7 +133,9 @@ pub fn options() -> OptionParser<Options> {
         root_server_port,
         server_port,
         fex_images,
-        direct_x11,
+        sommelier,
+        interactive,
+        tty,
         // positionals
         command,
         command_args,
