@@ -7,7 +7,7 @@ use std::{env, thread};
 use anyhow::{anyhow, Context, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::guest::x11bridge::start_x11bridge;
+use crate::guest::bridge::x11::start_x11bridge;
 
 pub fn setup_x11_forwarding<P>(run_path: P, host_display: &str) -> Result<()>
 where

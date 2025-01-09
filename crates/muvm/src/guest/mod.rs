@@ -1,4 +1,5 @@
 pub mod box64;
+pub mod bridge;
 pub mod fex;
 pub mod hidpipe;
 pub mod mount;
@@ -8,4 +9,3 @@ pub mod server_worker;
 pub mod socket;
 pub mod user;
 pub mod x11;
-pub mod x11bridge;
