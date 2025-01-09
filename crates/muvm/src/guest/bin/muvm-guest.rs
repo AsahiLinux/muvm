@@ -7,6 +7,7 @@ use std::{cmp, env, fs, thread};
 
 use anyhow::{Context, Result};
 use muvm::guest::box64::setup_box;
+use muvm::guest::bridge::pipewire::start_pwbridge;
 use muvm::guest::bridge::x11::start_x11bridge;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
@@ -118,6 +119,12 @@ fn main() -> Result<()> {
     thread::spawn(move || {
         if catch_unwind(|| start_hidpipe(uid)).is_err() {
             eprintln!("hidpipe thread crashed, input device passthrough will no longer function");
+        }
+    });
+
+    thread::spawn(|| {
+        if catch_unwind(start_pwbridge).is_err() {
+            eprintln!("pwbridge thread crashed, pipewire passthrough will no longer function");
         }
     });
 
