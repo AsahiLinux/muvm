@@ -8,6 +8,7 @@ use log::debug;
 use muvm::env::find_muvm_exec;
 use muvm::guest::cli_options::options;
 use muvm::guest::fex::setup_fex;
+use muvm::guest::box64::setup_box;
 use muvm::guest::mount::mount_filesystems;
 use muvm::guest::net::configure_network;
 use muvm::guest::socket::setup_socket_proxy;
@@ -52,7 +53,7 @@ fn main() -> Result<()> {
 
     Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
 
-    setup_fex()?;
+    setup_fex().unwrap_or_else(|_error|setup_box().unwrap());
 
     configure_network()?;
 

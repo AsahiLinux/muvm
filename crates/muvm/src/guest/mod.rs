@@ -1,5 +1,6 @@
 pub mod cli_options;
 pub mod fex;
+pub mod box64;
 pub mod mount;
 pub mod net;
 pub mod socket;
