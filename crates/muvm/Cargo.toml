@@ -35,3 +35,6 @@ path = "src/bin/muvm.rs"
 [[bin]]
 name = "muvm-guest"
 path = "src/guest/bin/muvm-guest.rs"
+
+[lints.clippy]
+uninlined_format_args = "warn"

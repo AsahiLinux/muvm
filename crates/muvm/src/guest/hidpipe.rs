@@ -265,7 +265,7 @@ pub fn start_hidpipe(user_id: u32) {
                         dev.unwrap().ff_erase_end(&ff_ers).unwrap();
                     }
                 },
-                m => panic!("Unknown message {}", m),
+                m => panic!("Unknown message {m}"),
             }
         } else if let Some(id) = fd_to_id.get(&fd) {
             let uinput = inputs_by_id.get(id).unwrap();

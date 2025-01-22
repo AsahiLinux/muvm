@@ -1086,7 +1086,7 @@ impl Client {
 
     fn ptrace_all_threads(pid: Pid) -> Result<Vec<PtracedPid>> {
         let mut tids = Vec::new();
-        for entry in fs::read_dir(format!("/proc/{}/task", pid))? {
+        for entry in fs::read_dir(format!("/proc/{pid}/task"))? {
             let entry = match entry {
                 Err(_) => continue,
                 Ok(a) => a,
@@ -1104,7 +1104,7 @@ impl Client {
                 if tid == pid {
                     return Err(e.into());
                 }
-                eprintln!("ptrace::attach({}, ...) failed (continuing)", pid);
+                eprintln!("ptrace::attach({pid}, ...) failed (continuing)");
                 continue;
             }
             let ptid = PtracedPid(tid);
@@ -1129,7 +1129,7 @@ impl Client {
         // TODO: match st_dev too to avoid false positives
         let my_ino = fstat(my_fd)?.st_ino;
         let mut fds_to_replace = Vec::new();
-        for entry in fs::read_dir(format!("/proc/{}/fd", pid))? {
+        for entry in fs::read_dir(format!("/proc/{pid}/fd"))? {
             let entry = entry?;
             if let Ok(file) = File::options().open(entry.path()) {
                 if fstat(file.as_raw_fd())?.st_ino == my_ino {
@@ -1138,7 +1138,7 @@ impl Client {
             }
         }
         let mut pages_to_replace = Vec::new();
-        for line in read_to_string(format!("/proc/{}/maps", pid))?.lines() {
+        for line in read_to_string(format!("/proc/{pid}/maps"))?.lines() {
             let f: Vec<&str> = line.split_whitespace().collect();
             let ino: u64 = f[4].parse()?;
             if ino == my_ino {
@@ -1290,7 +1290,7 @@ impl Client {
                 self.process_futex_signal(recv)?;
             },
             a => {
-                eprintln!("Received unknown cross-domain command {}", a);
+                eprintln!("Received unknown cross-domain command {a}");
             },
         };
         self.gpu_ctx.poll_cmd()?;
@@ -1445,7 +1445,7 @@ fn find_vdso(pid: Option<Pid>) -> Result<(usize, usize), Errno> {
 }
 
 pub fn start_x11bridge(display: u32) {
-    let sock_path = format!("/tmp/.X11-unix/X{}", display);
+    let sock_path = format!("/tmp/.X11-unix/X{display}");
 
     // Look for a syscall instruction in the vDSO. We assume all processes map
     // the same vDSO (which should be true if they are running under the same
@@ -1524,7 +1524,7 @@ pub fn start_x11bridge(display: u32) {
                     .borrow_mut()
                     .process_socket(events)
                     .map_err(|e| {
-                        eprintln!("Client {} disconnected with error: {:?}", fd, e);
+                        eprintln!("Client {fd} disconnected with error: {e:?}");
                         e
                     })
                     .unwrap_or(ClientEvent::Close);
@@ -1569,7 +1569,7 @@ pub fn start_x11bridge(display: u32) {
                     .borrow_mut()
                     .process_vgpu()
                     .map_err(|e| {
-                        eprintln!("Server {} disconnected with error: {:?}", fd, e);
+                        eprintln!("Server {fd} disconnected with error: {e:?}");
                         e
                     })
                     .unwrap_or(true);
