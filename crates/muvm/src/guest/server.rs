@@ -16,7 +16,7 @@ pub async fn server_main(
     command: PathBuf,
     command_args: Vec<String>,
 ) -> Result<()> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", server_port)).await?;
+    let listener = TcpListener::bind(format!("0.0.0.0:{server_port}")).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
@@ -50,8 +50,7 @@ pub async fn server_main(
                         if !status.success() {
                             if let Some(code) = status.code() {
                                 eprintln!(
-                                    "{:?} process exited with status code: {code}",
-                                    command
+                                    "{command:?} process exited with status code: {code}"
                                 );
                             } else {
                                 eprintln!(
@@ -66,8 +65,7 @@ pub async fn server_main(
                     },
                     Err(err) => {
                         eprintln!(
-                            "Failed to execute {:?} as child process: {err}",
-                            command
+                            "Failed to execute {command:?} as child process: {err}"
                         );
                     },
                 }

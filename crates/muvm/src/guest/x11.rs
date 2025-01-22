@@ -24,7 +24,7 @@ where
     env::set_var("XSHMFENCE_NO_MEMFD", "1");
 
     if let Ok(xauthority) = std::env::var("XAUTHORITY") {
-        let src_path = format!("/run/muvm-host/{}", xauthority);
+        let src_path = format!("/run/muvm-host/{xauthority}");
         let mut rdr = File::open(src_path)?;
 
         let dst_path = run_path.as_ref().join("xauth");
