@@ -28,7 +28,7 @@ where
                 .to_str()
                 .expect("socket_path should not contain invalid UTF-8")
         ))
-        .arg(format!("VSOCK-CONNECT:2:{}", port))
+        .arg(format!("VSOCK-CONNECT:2:{port}"))
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr)

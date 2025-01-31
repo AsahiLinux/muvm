@@ -1,12 +1,8 @@
-use std::env;
+use crate::guest::server_worker::{State, Worker};
+use anyhow::Result;
+use log::error;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
-
-use anyhow::{Context, Result};
-use log::error;
-use muvm::server::cli_options::options;
-use muvm::server::worker::{State, Worker};
-use nix::unistd::geteuid;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -14,37 +10,13 @@ use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt as _;
 use uuid::Uuid;
 
-fn main() -> Result<()> {
-    let cookie = env::var("MUVM_SERVER_COOKIE")
-        .with_context(|| "Could find server cookie as an environment variable")?;
-
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async { tokio_main(cookie).await })
-}
-
-async fn tokio_main(cookie: String) -> Result<()> {
-    env_logger::init();
-
-    let cookie = Uuid::try_parse(&cookie).context("Couldn't parse cookie as UUID v7")?;
-    let uid: u32 = geteuid().into();
-
-    let (server_port, command, command_args) = if uid == 0 {
-        let server_port = if let Ok(server_port) = env::var("MUVM_ROOT_SERVER_PORT") {
-            server_port.parse()?
-        } else {
-            3335
-        };
-        (
-            server_port,
-            PathBuf::from("/bin/sleep"),
-            vec!["inf".to_string()],
-        )
-    } else {
-        let options = options().run();
-        (options.server_port, options.command, options.command_args)
-    };
-
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", server_port)).await?;
+pub async fn server_main(
+    server_port: u32,
+    cookie: Uuid,
+    command: PathBuf,
+    command_args: Vec<String>,
+) -> Result<()> {
+    let listener = TcpListener::bind(format!("0.0.0.0:{server_port}")).await?;
     let (state_tx, state_rx) = watch::channel(State::new());
 
     let mut worker_handle = tokio::spawn(async move {
@@ -78,8 +50,7 @@ async fn tokio_main(cookie: String) -> Result<()> {
                         if !status.success() {
                             if let Some(code) = status.code() {
                                 eprintln!(
-                                    "{:?} process exited with status code: {code}",
-                                    command
+                                    "{command:?} process exited with status code: {code}"
                                 );
                             } else {
                                 eprintln!(
@@ -94,8 +65,7 @@ async fn tokio_main(cookie: String) -> Result<()> {
                     },
                     Err(err) => {
                         eprintln!(
-                            "Failed to execute {:?} as child process: {err}",
-                            command
+                            "Failed to execute {command:?} as child process: {err}"
                         );
                     },
                 }

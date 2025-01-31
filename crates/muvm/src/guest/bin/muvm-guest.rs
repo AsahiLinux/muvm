@@ -1,26 +1,51 @@
-use std::cmp;
+use std::fs::File;
+use std::io::Read;
 use std::os::fd::AsFd;
-use std::os::unix::process::CommandExt as _;
+use std::panic::catch_unwind;
 use std::process::Command;
+use std::{cmp, env, fs, thread};
 
 use anyhow::{Context, Result};
-use log::debug;
-use muvm::env::find_muvm_exec;
-use muvm::guest::cli_options::options;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::box64::setup_box;
+use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
 use muvm::guest::net::configure_network;
+use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
-use muvm::guest::sommelier::exec_sommelier;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use muvm::guest::x11bridge::start_x11bridge;
+use muvm::utils::launch::GuestConfiguration;
+use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
+
+const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
 fn main() -> Result<()> {
     env_logger::init();
 
-    let options = options().run();
+    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
+        start_x11bridge(val.parse()?);
+        return Ok(());
+    }
+
+    let config_path = env::args()
+        .nth(1)
+        .context("expected configuration file path")?;
+    let mut config_file = File::open(&config_path)?;
+    let mut config_buf = Vec::new();
+    config_file.read_to_end(&mut config_buf)?;
+    fs::remove_file(config_path).context("Unable to delete temporary muvm configuration file")?;
+    if let Ok(krun_config_path) = env::var(KRUN_CONFIG) {
+        fs::remove_file(krun_config_path)
+            .context("Unable to delete temporary krun configuration file")?;
+        // SAFETY: We are single-threaded at this point
+        env::remove_var(KRUN_CONFIG);
+    }
+    // SAFETY: We are single-threaded at this point
+    env::remove_var("KRUN_WORKDIR");
+    let options = serde_json::from_slice::<GuestConfiguration>(&config_buf)?;
 
     {
         const ESYNC_RLIMIT_NOFILE: u64 = 524288;
@@ -37,7 +62,7 @@ fn main() -> Result<()> {
         setrlimit(Resource::Nofile, rlim).context("Failed to raise `RLIMIT_NOFILE`")?;
     }
 
-    if let Err(err) = mount_filesystems() {
+    if let Err(err) = mount_filesystems(options.merged_rootfs) {
         return Err(err).context("Failed to mount filesystems, bailing out");
     }
 
@@ -57,20 +82,11 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    let muvm_hidpipe_path = find_muvm_exec("muvm-hidpipe")?;
-    Command::new(muvm_hidpipe_path)
-        .arg(format!("{}", options.uid))
-        .spawn()
-        .context("Failed to execute `muvm-hidpipe` as child process")?;
-
-    // Before switching to the user, start another instance of muvm-server to serve
-    // launch requests as root.
-    let muvm_server_path = find_muvm_exec("muvm-server")?;
-    Command::new(muvm_server_path)
-        .spawn()
-        .context("Failed to execute `muvm-server` as child process")?;
-
-    let run_path = match setup_user(options.username, options.uid, options.gid) {
+    let run_path = match setup_user(
+        options.username,
+        Uid::from(options.uid),
+        Gid::from(options.gid),
+    ) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
     };
@@ -81,16 +97,25 @@ fn main() -> Result<()> {
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, 3333)?;
 
-    if !setup_x11_forwarding(run_path)? {
-        // Will not return if successful.
-        exec_sommelier(&options.command, &options.command_args)
-            .context("Failed to execute sommelier")?;
+    if let Some(host_display) = options.host_display {
+        setup_x11_forwarding(run_path, &host_display)?;
     }
 
-    // Fallback option if sommelier is not present or for direct X11 mode.
-    debug!(command:? = options.command, command_args:? = options.command_args; "exec");
-    let err = Command::new(&options.command)
-        .args(options.command_args)
-        .exec();
-    Err(err).with_context(|| format!("Failed to exec {:?}", options.command))?
+    let uid = options.uid;
+    thread::spawn(move || {
+        if catch_unwind(|| start_hidpipe(uid)).is_err() {
+            eprintln!("hidpipe thread crashed, input device passthrough will no longer function");
+        }
+    });
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        server_main(
+            options.server_port,
+            options.server_cookie,
+            options.command.command,
+            options.command.command_args,
+        )
+        .await
+    })
 }

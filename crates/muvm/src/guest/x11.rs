@@ -1,33 +1,22 @@
-use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::panic::catch_unwind;
 use std::path::Path;
-use std::process::Command;
+use std::{env, thread};
 
 use anyhow::{anyhow, Context, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::env::find_muvm_exec;
+use crate::guest::x11bridge::start_x11bridge;
 
-pub fn setup_x11_forwarding<P>(run_path: P) -> Result<bool>
+pub fn setup_x11_forwarding<P>(run_path: P, host_display: &str) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    // Set by muvm if DISPLAY was provided from the host.
-    let host_display = match env::var("HOST_DISPLAY") {
-        Ok(d) => d,
-        Err(_) => return Ok(false),
-    };
-
     if !host_display.starts_with(':') {
         return Err(anyhow!("Invalid host DISPLAY"));
     }
     let host_display = &host_display[1..];
-
-    let mut cmd = Command::new(find_muvm_exec("muvm-x11bridge")?);
-    cmd.args(["--listen-display", ":1"]);
-
-    cmd.spawn().context("Failed to spawn `muvm-x11bridge`")?;
 
     // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
@@ -35,7 +24,7 @@ where
     env::set_var("XSHMFENCE_NO_MEMFD", "1");
 
     if let Ok(xauthority) = std::env::var("XAUTHORITY") {
-        let src_path = format!("/run/muvm-host/{}", xauthority);
+        let src_path = format!("/run/muvm-host/{xauthority}");
         let mut rdr = File::open(src_path)?;
 
         let dst_path = run_path.as_ref().join("xauth");
@@ -89,6 +78,11 @@ where
         // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
         env::set_var("XAUTHORITY", dst_path);
     }
+    thread::spawn(|| {
+        if catch_unwind(|| start_x11bridge(1)).is_err() {
+            eprintln!("x11bridge thread crashed, x11 passthrough will no longer function");
+        }
+    });
 
-    Ok(true)
+    Ok(())
 }

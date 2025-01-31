@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::env;
 use std::ffi::CString;
 use std::fs::{read_dir, read_link, File};
 use std::io::Write;
@@ -50,7 +49,7 @@ fn do_mount_recursive_bind(source: &str, target: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn mount_fex_rootfs() -> Result<()> {
+fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
     let dir = "/run/fex-emu/";
     let dir_rootfs = dir.to_string() + "rootfs";
 
@@ -59,10 +58,6 @@ fn mount_fex_rootfs() -> Result<()> {
 
     let flags = MountFlags::RDONLY;
     let mut images = Vec::new();
-
-    let merged_rootfs = env::var("FEX_MERGEDROOTFS")
-        .map(|a| a != "0")
-        .unwrap_or(false);
 
     // In merged RootFS mode, make /run/fex-emu a tmpfs.
     // This ensures that once /run is bind-mounted into the
@@ -95,11 +90,7 @@ fn mount_fex_rootfs() -> Result<()> {
     if images.is_empty() {
         // If no images were passed, FEX is either managed by the host os
         // or is not installed at all. Avoid clobbering the config in that case.
-        // merged_rootfs is ignored in this case, and we unset the env var so
-        // the state of MergedRootFS is strictly managed by the host config.
-        // TODO: Remove once #134 is merged, move merged_rootfs to config.
-        // SAFETY: muvm-guest is single-threaded.
-        unsafe { env::remove_var("FEX_MERGEDROOTFS") };
+        // merged_rootfs is ignored in this case.
         return Ok(());
     }
 
@@ -285,7 +276,7 @@ pub fn place_file(backing: &str, dest: &str, contents: Option<&str>) -> Result<(
     overlay_file(backing, dest)
 }
 
-pub fn mount_filesystems() -> Result<()> {
+pub fn mount_filesystems(merged_rootfs: bool) -> Result<()> {
     make_tmpfs("/var/run")?;
 
     place_file("/run/resolv.conf", "/etc/resolv.conf", None)?;
@@ -323,11 +314,8 @@ pub fn mount_filesystems() -> Result<()> {
     .context("Failed to mount `/dev/shm`")?;
 
     // Do this last so it can pick up all the submounts made above.
-    if let Err(e) = mount_fex_rootfs() {
-        println!(
-            "Failed to mount FEX rootfs, carrying on without. Error: {}",
-            e
-        );
+    if let Err(e) = mount_fex_rootfs(merged_rootfs) {
+        println!("Failed to mount FEX rootfs, carrying on without. Error: {e}");
     }
 
     Ok(())

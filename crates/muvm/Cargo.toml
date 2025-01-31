@@ -36,14 +36,5 @@ path = "src/bin/muvm.rs"
 name = "muvm-guest"
 path = "src/guest/bin/muvm-guest.rs"
 
-[[bin]]
-name = "muvm-hidpipe"
-path = "src/hidpipe/bin/muvm-hidpipe.rs"
-
-[[bin]]
-name = "muvm-server"
-path = "src/server/bin/muvm-server.rs"
-
-[[bin]]
-name = "muvm-x11bridge"
-path = "src/x11bridge/bin/muvm-x11bridge.rs"
+[lints.clippy]
+uninlined_format_args = "warn"

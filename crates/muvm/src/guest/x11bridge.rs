@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bpaf::{construct, long, OptionParser, Parser};
 use nix::errno::Errno;
 use nix::fcntl::readlink;
 use nix::libc::{
@@ -18,7 +17,7 @@ use nix::sys::socket::{
 use nix::sys::stat::fstat;
 use nix::sys::uio::{process_vm_writev, RemoteIoVec};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{getresgid, getresuid, mkstemp, read, setegid, seteuid, Pid};
+use nix::unistd::{mkstemp, read, Pid};
 use nix::{cmsg_space, ioctl_read, ioctl_readwrite, ioctl_write_ptr, NixPath};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -1087,7 +1086,7 @@ impl Client {
 
     fn ptrace_all_threads(pid: Pid) -> Result<Vec<PtracedPid>> {
         let mut tids = Vec::new();
-        for entry in fs::read_dir(format!("/proc/{}/task", pid))? {
+        for entry in fs::read_dir(format!("/proc/{pid}/task"))? {
             let entry = match entry {
                 Err(_) => continue,
                 Ok(a) => a,
@@ -1105,7 +1104,7 @@ impl Client {
                 if tid == pid {
                     return Err(e.into());
                 }
-                eprintln!("ptrace::attach({}, ...) failed (continuing)", pid);
+                eprintln!("ptrace::attach({pid}, ...) failed (continuing)");
                 continue;
             }
             let ptid = PtracedPid(tid);
@@ -1130,7 +1129,7 @@ impl Client {
         // TODO: match st_dev too to avoid false positives
         let my_ino = fstat(my_fd)?.st_ino;
         let mut fds_to_replace = Vec::new();
-        for entry in fs::read_dir(format!("/proc/{}/fd", pid))? {
+        for entry in fs::read_dir(format!("/proc/{pid}/fd"))? {
             let entry = entry?;
             if let Ok(file) = File::options().open(entry.path()) {
                 if fstat(file.as_raw_fd())?.st_ino == my_ino {
@@ -1139,7 +1138,7 @@ impl Client {
             }
         }
         let mut pages_to_replace = Vec::new();
-        for line in read_to_string(format!("/proc/{}/maps", pid))?.lines() {
+        for line in read_to_string(format!("/proc/{pid}/maps"))?.lines() {
             let f: Vec<&str> = line.split_whitespace().collect();
             let ino: u64 = f[4].parse()?;
             if ino == my_ino {
@@ -1291,7 +1290,7 @@ impl Client {
                 self.process_futex_signal(recv)?;
             },
             a => {
-                eprintln!("Received unknown cross-domain command {}", a);
+                eprintln!("Received unknown cross-domain command {a}");
             },
         };
         self.gpu_ctx.poll_cmd()?;
@@ -1445,36 +1444,8 @@ fn find_vdso(pid: Option<Pid>) -> Result<(usize, usize), Errno> {
     Err(Errno::EINVAL)
 }
 
-#[derive(Clone, Debug)]
-pub struct Options {
-    listen_display: String,
-}
-
-pub fn options() -> OptionParser<Options> {
-    let listen_display = long("listen-display")
-        .short('l')
-        .help("The X11 display number to listen on")
-        .argument("DISPLAY")
-        .fallback(":0".into());
-
-    construct!(Options { listen_display }).to_options()
-}
-
-fn main() {
-    let options = options().fallback_to_usage().run();
-
-    let display = if options.listen_display.starts_with(':') {
-        options.listen_display[1..].parse::<u32>().ok()
-    } else {
-        None
-    };
-
-    let sock_path = if let Some(display) = display {
-        format!("/tmp/.X11-unix/X{}", display)
-    } else {
-        eprintln!("Invalid --listen-display value");
-        exit(1)
-    };
+pub fn start_x11bridge(display: u32) {
+    let sock_path = format!("/tmp/.X11-unix/X{display}");
 
     // Look for a syscall instruction in the vDSO. We assume all processes map
     // the same vDSO (which should be true if they are running under the same
@@ -1495,21 +1466,7 @@ fn main() {
 
     let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
     _ = fs::remove_file(&sock_path);
-    let resuid = getresuid().unwrap();
-    let resgid = getresgid().unwrap();
-    if resuid.real != resuid.effective {
-        seteuid(resuid.real).unwrap();
-    }
-    if resgid.real != resgid.effective {
-        setegid(resgid.real).unwrap()
-    }
     let listen_sock = UnixListener::bind(sock_path).unwrap();
-    if resuid.real != resuid.effective {
-        seteuid(resuid.effective).unwrap();
-    }
-    if resgid.real != resgid.effective {
-        setegid(resgid.effective).unwrap()
-    }
     epoll
         .add(
             &listen_sock,
@@ -1567,7 +1524,7 @@ fn main() {
                     .borrow_mut()
                     .process_socket(events)
                     .map_err(|e| {
-                        eprintln!("Client {} disconnected with error: {:?}", fd, e);
+                        eprintln!("Client {fd} disconnected with error: {e:?}");
                         e
                     })
                     .unwrap_or(ClientEvent::Close);
@@ -1612,7 +1569,7 @@ fn main() {
                     .borrow_mut()
                     .process_vgpu()
                     .map_err(|e| {
-                        eprintln!("Server {} disconnected with error: {:?}", fd, e);
+                        eprintln!("Server {fd} disconnected with error: {e:?}");
                         e
                     })
                     .unwrap_or(true);
@@ -1638,15 +1595,5 @@ fn main() {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_options() {
-        options().check_invariants(false)
     }
 }
