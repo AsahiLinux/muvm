@@ -5,6 +5,7 @@ use anyhow::{anyhow, Context};
 use bpaf::{any, construct, long, positional, OptionParser, Parser};
 
 use crate::types::MiB;
+use crate::utils::launch::Emulator;
 
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -19,6 +20,7 @@ pub struct Options {
     pub tty: bool,
     pub privileged: bool,
     pub publish_ports: Vec<String>,
+    pub emulator: Option<Emulator>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -60,6 +62,15 @@ pub fn options() -> OptionParser<Options> {
             None => Ok((s, None)),
         })
         .many();
+    let emulator = long("emu")
+        .help(
+            "Which emulator to use for running x86_64 binaries.
+             Valid options are \"box\" and \"fex\". If this argument is not
+             present, muvm will try to use FEX, falling back to Box if it
+             can't be found.",
+        )
+        .argument::<Emulator>("EMU")
+        .optional();
     let mem = long("mem")
         .help(
             "The amount of RAM, in MiB, that will be available to this microVM.
@@ -140,6 +151,7 @@ pub fn options() -> OptionParser<Options> {
         tty,
         privileged,
         publish_ports,
+        emulator,
         // positionals
         command,
         command_args,

@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::utils::env::find_in_path;
 
@@ -18,7 +18,7 @@ pub fn setup_fex() -> Result<()> {
     let fex_interpreter_path =
         find_in_path("FEXInterpreter").context("Failed to check existence of `FEXInterpreter`")?;
     let Some(fex_interpreter_path) = fex_interpreter_path else {
-        return Ok(());
+        return Err(anyhow!("Failed to find `FEXInterpreter` in PATH"));
     };
     let fex_interpreter_path = fex_interpreter_path
         .to_str()

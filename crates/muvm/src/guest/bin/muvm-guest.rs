@@ -6,6 +6,7 @@ use std::process::Command;
 use std::{cmp, env, fs, thread};
 
 use anyhow::{Context, Result};
+use muvm::guest::box64::setup_box;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
@@ -15,7 +16,7 @@ use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
 use muvm::guest::x11bridge::start_x11bridge;
-use muvm::utils::launch::{GuestConfiguration, PULSE_SOCKET};
+use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
@@ -77,7 +78,20 @@ fn main() -> Result<()> {
 
     Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
 
-    setup_fex()?;
+    if let Some(emulator) = options.emulator {
+        match emulator {
+            Emulator::Box => setup_box()?,
+            Emulator::Fex => setup_fex()?,
+        };
+    } else if let Err(err) = setup_fex() {
+        eprintln!("Error setting up FEX in binfmt_misc: {err}");
+        eprintln!("Failed to find or configure FEX, falling back to Box");
+
+        if let Err(err) = setup_box() {
+            eprintln!("Error setting up Box in binfmt_misc: {err}");
+            eprintln!("No emulators were configured, x86 emulation may not work");
+        }
+    }
 
     configure_network()?;
 
