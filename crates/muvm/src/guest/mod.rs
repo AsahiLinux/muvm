@@ -1,3 +1,4 @@
+pub mod box64;
 pub mod fex;
 pub mod hidpipe;
 pub mod mount;

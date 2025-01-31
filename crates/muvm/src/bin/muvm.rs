@@ -394,6 +394,7 @@ fn main() -> Result<ExitCode> {
         gid: getgid().as_raw(),
         host_display: display,
         merged_rootfs: options.merged_rootfs,
+        emulator: options.emulator,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;
