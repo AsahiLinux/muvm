@@ -6,6 +6,8 @@ use std::process::Command;
 use std::{cmp, env, fs, thread};
 
 use anyhow::{Context, Result};
+use muvm::guest::bridge::pipewire::start_pwbridge;
+use muvm::guest::bridge::x11::start_x11bridge;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
@@ -14,7 +16,6 @@ use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
-use muvm::guest::x11bridge::start_x11bridge;
 use muvm::utils::launch::{GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
@@ -104,6 +105,12 @@ fn main() -> Result<()> {
     thread::spawn(move || {
         if catch_unwind(|| start_hidpipe(uid)).is_err() {
             eprintln!("hidpipe thread crashed, input device passthrough will no longer function");
+        }
+    });
+
+    thread::spawn(|| {
+        if catch_unwind(start_pwbridge).is_err() {
+            eprintln!("pwbridge thread crashed, pipewire passthrough will no longer function");
         }
     });
 
