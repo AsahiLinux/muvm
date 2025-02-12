@@ -256,6 +256,9 @@ impl ProtocolHandler for X11ProtocolHandler {
             }
         } else if Some(buf[0]) == this.protocol_handler.dri3_ext_opcode {
             if buf[1] == DRI3_OPCODE_VERSION {
+                if buf.len() < 8 {
+                    return Ok(StreamSendResult::WantMore);
+                }
                 buf[8] = buf[8].min(3);
             } else if buf[1] == DRI3_OPCODE_OPEN {
                 buf[0] = X11_OPCODE_NOP;
@@ -280,6 +283,9 @@ impl ProtocolHandler for X11ProtocolHandler {
                 resources.push(res);
                 finalizers.push(X11ResourceFinalizer::Gem(finalizer));
             } else if buf[1] == DRI3_OPCODE_FENCE_FROM_FD {
+                if buf.len() < 12 {
+                    return Ok(StreamSendResult::WantMore);
+                }
                 let xid = u32::from_ne_bytes(buf[8..12].try_into().unwrap());
                 let fd = this.request_fds.remove(0);
                 let filename = readlink(format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str())?;
@@ -288,6 +294,9 @@ impl ProtocolHandler for X11ProtocolHandler {
                 let res = Self::create_cross_vm_futex(this, fd, xid, creds.pid(), filename)?;
                 resources.push(res);
             } else if buf[1] == DRI3_OPCODE_PIXMAP_FROM_BUFFERS {
+                if buf.len() < 12 {
+                    return Ok(StreamSendResult::WantMore);
+                }
                 let num_bufs = buf[12] as usize;
                 for fd in this.request_fds.drain(..num_bufs).collect::<Vec<_>>() {
                     let (res, finalizer) = this.vgpu_id_from_prime(fd)?;
@@ -297,6 +306,9 @@ impl ProtocolHandler for X11ProtocolHandler {
             }
         } else if Some(buf[0]) == this.protocol_handler.sync_ext_opcode {
             if buf[1] == SYNC_OPCODE_DESTROY_FENCE {
+                if buf.len() < 8 {
+                    return Ok(StreamSendResult::WantMore);
+                }
                 let xid = u32::from_ne_bytes(buf[4..8].try_into().unwrap());
                 finalizers.push(X11ResourceFinalizer::Futex(xid));
             }
