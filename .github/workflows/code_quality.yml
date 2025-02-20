@@ -34,6 +34,9 @@ jobs:
       - name: Download libkrun.h
         run: sudo curl -o /usr/include/libkrun.h https://raw.githubusercontent.com/containers/libkrun/refs/heads/main/include/libkrun.h
 
+      - name: Download libkrun.pc
+        run: sudo curl -o /usr/lib/x86_64-linux-gnu/pkgconfig/libkrun.pc https://gist.githubusercontent.com/slp/b5761d225d96d2c8879392a7b1611aee/raw/79b81aaabc34648d27916f4abcf7502d98915c50/libkrun-ubuntu.pc
+
       - name: Formatting (rustfmt)
         run: cargo fmt -- --check
 
