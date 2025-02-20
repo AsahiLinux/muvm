@@ -1,13 +1,20 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), pkg_config::Error> {
     println!("cargo::rerun-if-changed=wrapper.h");
-    println!("cargo::rustc-link-lib=krun");
+
+    let library = pkg_config::probe_library("libkrun")?;
 
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+        .clang_args(
+            library
+                .include_paths
+                .iter()
+                .map(|path| format!("-I{}", path.to_string_lossy())),
+        )
         .clang_arg("-fretain-comments-from-system-headers")
+        .header("wrapper.h")
         .generate()
         .expect("Unable to generate bindings");
 
@@ -15,4 +22,6 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    Ok(())
 }
