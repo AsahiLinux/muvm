@@ -87,14 +87,9 @@ fn wrapped_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
-    interactive: bool,
     tty: bool,
     privileged: bool,
 ) -> Result<ExitCode> {
-    if !interactive {
-        request_launch(command, command_args, env, 0, false, privileged)?;
-        return Ok(ExitCode::from(0));
-    }
     let run_path = env::var("XDG_RUNTIME_DIR")
         .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
     let socket_dir = Path::new(&run_path).join("krun/socket");
@@ -120,7 +115,6 @@ pub fn launch_or_lock(
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
-    interactive: bool,
     tty: bool,
     privileged: bool,
 ) -> Result<LaunchResult> {
@@ -140,7 +134,6 @@ pub fn launch_or_lock(
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
-                    interactive,
                     tty,
                     privileged,
                 ) {

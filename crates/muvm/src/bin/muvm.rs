@@ -78,7 +78,6 @@ fn main() -> Result<ExitCode> {
         options.command,
         options.command_args,
         options.env,
-        options.interactive,
         options.tty,
         options.privileged,
     )? {

@@ -16,7 +16,6 @@ pub struct Options {
     pub passt_socket: Option<PathBuf>,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
-    pub interactive: bool,
     pub tty: bool,
     pub privileged: bool,
     pub publish_ports: Vec<String>,
@@ -109,10 +108,6 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let interactive = long("interactive")
-        .short('i')
-        .help("Attach to the command's stdin/out after starting it")
-        .switch();
     let tty = long("tty")
         .short('t')
         .help("Allocate a tty for the command")
@@ -147,7 +142,6 @@ pub fn options() -> OptionParser<Options> {
         passt_socket,
         fex_images,
         merged_rootfs,
-        interactive,
         tty,
         privileged,
         publish_ports,
