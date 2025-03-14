@@ -37,7 +37,6 @@ impl FromStr for Emulator {
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 pub struct GuestConfiguration {
-    pub command: Launch,
     pub username: String,
     pub uid: u32,
     pub gid: u32,

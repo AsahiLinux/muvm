@@ -5,6 +5,8 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
@@ -192,7 +194,7 @@ pub fn request_launch(
     let run_path = env::var("XDG_RUNTIME_DIR")
         .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
     let socket_path = Path::new(&run_path).join("krun/server");
-    let mut stream = UnixStream::connect(socket_path).map_err(LaunchError::Connection)?;
+    let mut stream = connect_to_socket(socket_path)?;
 
     let launch = Launch {
         command,
@@ -225,5 +227,22 @@ pub fn request_launch(
         Ok(())
     } else {
         Err(LaunchError::Server(resp).into())
+    }
+}
+
+fn connect_to_socket(socket_path: PathBuf) -> Result<UnixStream> {
+    let mut tries = 0;
+    loop {
+        match UnixStream::connect(&socket_path).map_err(LaunchError::Connection) {
+            Ok(stream) => return Ok(stream),
+            Err(err) => {
+                if tries == 5 {
+                    return Err(err.into());
+                } else {
+                    thread::sleep(Duration::from_millis(500));
+                    tries += 1;
+                }
+            },
+        }
     }
 }
