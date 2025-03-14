@@ -12,8 +12,8 @@
 
 ``` sh
 Usage: muvm [-c=CPU_LIST]... [-e=ENV]... [--mem=MEM] [--vram=VRAM] [--passt-socket=PATH] [-f=
-FEX_IMAGE]... [-m] [-t] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [--emu=EMU
-] [--no-inherit-env] COMMAND [COMMAND_ARGS]...
+FEX_IMAGE]... [-m] [--no-tty] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [
+--emu=EMU] [--no-inherit-env] COMMAND [COMMAND_ARGS]...
 
 Available positional items:
     COMMAND                  the command you want to execute in the vm
@@ -45,7 +45,7 @@ Available options:
                                      May be specified multiple times.
                                      First the base image, then overlays in order.
     -m, --merged-rootfs      Use merged rootfs for FEX (experimental)
-    -t, --tty                Allocate a tty for the command
+        --no-tty             Force not allocating a tty for the command
         --privileged         Run the command as root inside the vm.
                                  This notably does not allow root access to the host fs.
     -p, --publish=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>

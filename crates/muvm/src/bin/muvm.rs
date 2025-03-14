@@ -94,7 +94,7 @@ fn main() -> Result<ExitCode> {
         options.command,
         options.command_args,
         options.env,
-        options.tty,
+        options.no_tty,
         options.privileged,
         inherit_env,
     )? {
@@ -121,7 +121,7 @@ fn main() -> Result<ExitCode> {
         command,
         command_args,
         env,
-        options.tty,
+        options.no_tty,
         options.privileged,
         inherit_env,
     )? {

@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
 
 use crate::env::prepare_env_vars;
-use crate::tty::{run_io_host, RawTerminal};
+use crate::tty::{run_io_host, stdout_is_tty, RawTerminal};
 use crate::utils::launch::Launch;
 use nix::unistd::unlink;
 use std::ops::Range;
@@ -89,7 +89,7 @@ fn wrapped_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
-    tty: bool,
+    no_tty: bool,
     privileged: bool,
 ) -> Result<ExitCode> {
     let run_path = env::var("XDG_RUNTIME_DIR")
@@ -99,15 +99,9 @@ fn wrapped_launch(
     let path = socket_dir.join(format!("port-{vsock_port}"));
     _ = unlink(&path);
     let listener = UnixListener::bind(path).context("Failed to listen on vm socket")?;
-    let raw_tty = if tty {
-        Some(
-            RawTerminal::set()
-                .context("Asked to allocate a tty for the command, but stdin is not a tty")?,
-        )
-    } else {
-        None
-    };
+    let tty = !no_tty && stdout_is_tty();
     request_launch(command, command_args, env, vsock_port, tty, privileged)?;
+    let raw_tty = tty.then(|| RawTerminal::set().expect("Stdout should be a tty"));
     let code = run_io_host(listener, tty)?;
     drop(raw_tty);
     Ok(ExitCode::from(code))
@@ -117,7 +111,7 @@ pub fn launch_or_lock(
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
-    tty: bool,
+    no_tty: bool,
     privileged: bool,
     inherit_env: bool,
 ) -> Result<LaunchResult> {
@@ -137,7 +131,7 @@ pub fn launch_or_lock(
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
-                    tty,
+                    no_tty,
                     privileged,
                 ) {
                     Err(err) => match err.downcast_ref::<LaunchError>() {

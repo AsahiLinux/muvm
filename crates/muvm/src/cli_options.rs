@@ -16,7 +16,7 @@ pub struct Options {
     pub passt_socket: Option<PathBuf>,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
-    pub tty: bool,
+    pub no_tty: bool,
     pub privileged: bool,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
@@ -109,9 +109,8 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let tty = long("tty")
-        .short('t')
-        .help("Allocate a tty for the command")
+    let no_tty = long("no-tty")
+        .help("Force not allocating a tty for the command")
         .switch();
     let privileged = long("privileged")
         .help(
@@ -149,7 +148,7 @@ pub fn options() -> OptionParser<Options> {
         passt_socket,
         fex_images,
         merged_rootfs,
-        tty,
+        no_tty,
         privileged,
         publish_ports,
         emulator,
