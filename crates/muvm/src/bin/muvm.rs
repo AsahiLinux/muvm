@@ -89,12 +89,14 @@ fn main() -> Result<ExitCode> {
         unreachable!("`launch_vm` never returns");
     }
 
+    let inherit_env = !options.no_inherit_env;
     let (lock_file, command, command_args, env) = match launch_or_lock(
         options.command,
         options.command_args,
         options.env,
         options.tty,
         options.privileged,
+        inherit_env,
     )? {
         LaunchResult::LaunchRequested(code) => {
             // There was a muvm instance already running and we've requested it
@@ -115,7 +117,14 @@ fn main() -> Result<ExitCode> {
         .args(env::args())
         .env(LOCK_FD_ENV_VAR, lock_fd.into_raw_fd().to_string())
         .spawn()?;
-    match launch_or_lock(command, command_args, env, options.tty, options.privileged)? {
+    match launch_or_lock(
+        command,
+        command_args,
+        env,
+        options.tty,
+        options.privileged,
+        inherit_env,
+    )? {
         LaunchResult::LockAcquired { .. } => Err(anyhow!("VM did not start")),
         LaunchResult::LaunchRequested(code) => Ok(code),
     }
@@ -123,7 +132,7 @@ fn main() -> Result<ExitCode> {
 
 fn launch_vm(options: Options) -> Result<Infallible> {
     let mut env =
-        prepare_env_vars(Vec::new()).context("Failed to prepare environment variables")?;
+        prepare_env_vars(Vec::new(), false).context("Failed to prepare environment variables")?;
     {
         // Set the log level to "off".
         //

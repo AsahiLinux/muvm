@@ -20,6 +20,7 @@ pub struct Options {
     pub privileged: bool,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
+    pub no_inherit_env: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -127,6 +128,12 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument::<String>("[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]")
         .many();
+    let no_inherit_env = long("no-inherit-env")
+        .help(
+            "Run the command with as little of the environment variables
+            passed in as possible, instead of inheriting most of them.",
+        )
+        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -146,6 +153,7 @@ pub fn options() -> OptionParser<Options> {
         privileged,
         publish_ports,
         emulator,
+        no_inherit_env,
         // positionals
         command,
         command_args,

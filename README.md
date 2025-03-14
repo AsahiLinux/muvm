@@ -12,8 +12,8 @@
 
 ``` sh
 Usage: muvm [-c=CPU_LIST]... [-e=ENV]... [--mem=MEM] [--vram=VRAM] [--passt-socket=PATH] [-f=
-FEX_IMAGE]... [-m] [-i] [-t] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [
---emu=EMU] COMMAND [COMMAND_ARGS]...
+FEX_IMAGE]... [-m] [-t] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [--emu=EMU
+] [--no-inherit-env] COMMAND [COMMAND_ARGS]...
 
 Available positional items:
     COMMAND                  the command you want to execute in the vm
@@ -55,6 +55,8 @@ Available options:
                                       Valid options are "box" and "fex". If this argument is not
                                       present, muvm will try to use FEX, falling back to Box if it
                                       can't be found.
+        --no-inherit-env     Run the command with as little of the environment variables
+                                     passed in as possible, instead of inheriting most of them.
     -h, --help               Prints help information
 ```
 

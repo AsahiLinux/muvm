@@ -119,6 +119,7 @@ pub fn launch_or_lock(
     env: Vec<(String, Option<String>)>,
     tty: bool,
     privileged: bool,
+    inherit_env: bool,
 ) -> Result<LaunchResult> {
     let lock_file = lock_file()?;
     match lock_file {
@@ -129,7 +130,7 @@ pub fn launch_or_lock(
             env,
         }),
         None => {
-            let env = prepare_env_vars(env)?;
+            let env = prepare_env_vars(env, inherit_env)?;
             let mut tries = 0;
             loop {
                 match wrapped_launch(
