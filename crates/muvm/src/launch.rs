@@ -28,6 +28,7 @@ pub enum LaunchResult {
         command: PathBuf,
         command_args: Vec<String>,
         env: Vec<(String, Option<String>)>,
+        cwd: PathBuf,
     },
 }
 
@@ -89,6 +90,7 @@ fn wrapped_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
+    cwd: PathBuf,
     no_tty: bool,
     privileged: bool,
 ) -> Result<ExitCode> {
@@ -100,7 +102,7 @@ fn wrapped_launch(
     _ = unlink(&path);
     let listener = UnixListener::bind(path).context("Failed to listen on vm socket")?;
     let tty = !no_tty && stdout_is_tty();
-    request_launch(command, command_args, env, vsock_port, tty, privileged)?;
+    request_launch(command, command_args, env, cwd, vsock_port, tty, privileged)?;
     let raw_tty = tty.then(|| RawTerminal::set().expect("Stdout should be a tty"));
     let code = run_io_host(listener, tty)?;
     drop(raw_tty);
@@ -111,6 +113,7 @@ pub fn launch_or_lock(
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
+    cwd: PathBuf,
     no_tty: bool,
     privileged: bool,
     inherit_env: bool,
@@ -122,6 +125,7 @@ pub fn launch_or_lock(
             command,
             command_args,
             env,
+            cwd,
         }),
         None => {
             let env = prepare_env_vars(env, inherit_env)?;
@@ -131,6 +135,7 @@ pub fn launch_or_lock(
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
+                    cwd.clone(),
                     no_tty,
                     privileged,
                 ) {
@@ -182,6 +187,7 @@ pub fn request_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
+    cwd: PathBuf,
     vsock_port: u32,
     tty: bool,
     privileged: bool,
@@ -195,6 +201,7 @@ pub fn request_launch(
         command,
         command_args,
         env,
+        cwd,
         vsock_port,
         tty,
         privileged,

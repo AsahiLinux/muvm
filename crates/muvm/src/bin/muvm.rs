@@ -89,11 +89,13 @@ fn main() -> Result<ExitCode> {
         unreachable!("`launch_vm` never returns");
     }
 
+    let cwd = env::current_dir()?;
     let inherit_env = !options.no_inherit_env;
-    let (lock_file, command, command_args, env) = match launch_or_lock(
+    let (lock_file, command, command_args, env, cwd) = match launch_or_lock(
         options.command,
         options.command_args,
         options.env,
+        cwd,
         options.no_tty,
         options.privileged,
         inherit_env,
@@ -108,7 +110,8 @@ fn main() -> Result<ExitCode> {
             command,
             command_args,
             env,
-        } => (lock_file, command, command_args, env),
+            cwd,
+        } => (lock_file, command, command_args, env, cwd),
     };
 
     // Make it lose CLOEXEC
@@ -121,6 +124,7 @@ fn main() -> Result<ExitCode> {
         command,
         command_args,
         env,
+        cwd,
         options.no_tty,
         options.privileged,
         inherit_env,

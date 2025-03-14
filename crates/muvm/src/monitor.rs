@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::current_dir;
 use std::path::PathBuf;
 use std::thread;
 use std::time;
@@ -43,7 +44,8 @@ fn set_guest_pressure(pressure: GuestPressure) -> Result<()> {
         let command = PathBuf::from("/muvmdropcaches");
         let command_args = vec![];
         let env = HashMap::new();
-        request_launch(command, command_args, env, 0, false, true)?;
+        let cwd = current_dir()?;
+        request_launch(command, command_args, env, cwd, 0, false, true)?;
     }
 
     let wsf: u32 = pressure.into();
@@ -52,7 +54,8 @@ fn set_guest_pressure(pressure: GuestPressure) -> Result<()> {
     let command = PathBuf::from("/sbin/sysctl");
     let command_args = vec![format!("vm.watermark_scale_factor={}", wsf)];
     let env = HashMap::new();
-    request_launch(command, command_args, env, 0, false, true)
+    let cwd = current_dir()?;
+    request_launch(command, command_args, env, cwd, 0, false, true)
 }
 
 fn run() {

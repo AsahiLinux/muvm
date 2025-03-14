@@ -12,6 +12,7 @@ pub struct Launch {
     pub vsock_port: u32,
     pub tty: bool,
     pub privileged: bool,
+    pub cwd: PathBuf,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
