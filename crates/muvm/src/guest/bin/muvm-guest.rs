@@ -5,7 +5,7 @@ use std::panic::catch_unwind;
 use std::process::Command;
 use std::{cmp, env, fs, thread};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
 use muvm::guest::bridge::pipewire::start_pwbridge;
 use muvm::guest::bridge::x11::start_x11bridge;
@@ -91,6 +91,16 @@ fn main() -> Result<()> {
         if let Err(err) = setup_box() {
             eprintln!("Error setting up Box in binfmt_misc: {err}");
             eprintln!("No emulators were configured, x86 emulation may not work");
+        }
+    }
+
+    for init_command in options.init_commands {
+        let code = Command::new(&init_command)
+            .current_dir(&options.cwd)
+            .spawn()?
+            .wait()?;
+        if !code.success() {
+            return Err(anyhow!("Executing `{}` failed", init_command.display()));
         }
     }
 
