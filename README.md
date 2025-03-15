@@ -11,7 +11,7 @@
 ``` sh
 Usage: muvm [-c=CPU_LIST]... [-e=ENV]... [--mem=MEM] [--vram=VRAM] [--passt-socket=PATH] [-f=
 FEX_IMAGE]... [-m] [-i] [-t] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [
---emu=EMU] COMMAND [COMMAND_ARGS]...
+--emu=EMU] [-x=COMMAND]... COMMAND [COMMAND_ARGS]...
 
 Available positional items:
     COMMAND                  the command you want to execute in the vm
@@ -54,6 +54,9 @@ Available options:
                                       Valid options are "box" and "fex". If this argument is not
                                       present, muvm will try to use FEX, falling back to Box if it
                                       can't be found.
+    -x, --execute-pre=COMMAND  Command to run inside the VM before guest server starts.
+                                     Can be used for e.g. setting up additional mounts.
+                                     Can be specified multiple times.
     -h, --help               Prints help information
 ```
 
