@@ -43,6 +43,7 @@ pub struct GuestConfiguration {
     pub host_display: Option<String>,
     pub merged_rootfs: bool,
     pub emulator: Option<Emulator>,
+    pub cwd: PathBuf,
 }
 
 pub const PULSE_SOCKET: u32 = 3333;
