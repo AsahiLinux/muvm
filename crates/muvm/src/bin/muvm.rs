@@ -380,6 +380,7 @@ fn main() -> Result<ExitCode> {
 
     let muvm_guest_path = find_muvm_exec("muvm-guest")?;
 
+    let cwd = env::current_dir()?;
     let display = env::var("DISPLAY").ok();
     let guest_config = GuestConfiguration {
         command: Launch {
@@ -395,6 +396,7 @@ fn main() -> Result<ExitCode> {
         host_display: display,
         merged_rootfs: options.merged_rootfs,
         emulator: options.emulator,
+        cwd,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;
