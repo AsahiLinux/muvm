@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{fork, setresgid, setresuid, ForkResult, Gid, Uid, User};
 
-pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
+pub fn setup_user(uid: Uid, gid: Gid) -> Result<PathBuf> {
     setup_directories(uid, gid)?;
 
     setresgid(gid, gid, Gid::from(0)).context("Failed to setgid")?;
@@ -24,10 +24,10 @@ pub fn setup_user(username: String, uid: Uid, gid: Gid) -> Result<PathBuf> {
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
     env::set_var("XDG_RUNTIME_DIR", &path);
 
-    let user = User::from_name(&username)
+    let user = User::from_uid(uid)
         .map_err(Into::into)
         .and_then(|user| user.ok_or_else(|| anyhow!("requested entry not found")))
-        .with_context(|| format!("Failed to get user `{username}` from user database"))?;
+        .with_context(|| format!("Failed to get user `{uid}` from user database"))?;
 
     {
         // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
