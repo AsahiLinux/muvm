@@ -96,11 +96,7 @@ fn main() -> Result<()> {
 
     configure_network()?;
 
-    let run_path = match setup_user(
-        options.username,
-        Uid::from(options.uid),
-        Gid::from(options.gid),
-    ) {
+    let run_path = match setup_user(Uid::from(options.uid), Gid::from(options.gid)) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
     };

@@ -346,11 +346,12 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    let username = env::var("USER").context("Failed to get username from environment")?;
-    let user = User::from_name(&username)
+    let uid = getuid().as_raw();
+    let user = User::from_uid(uid.into())
         .map_err(Into::into)
         .and_then(|user| user.ok_or_else(|| anyhow!("requested entry not found")))
-        .with_context(|| format!("Failed to get user `{username}` from user database"))?;
+        .with_context(|| format!("Failed to get user `{uid}` from user database"))?;
+
     let workdir_path = CString::new(
         user.dir
             .to_str()
@@ -389,8 +390,7 @@ fn main() -> Result<ExitCode> {
             tty: false,
             privileged: false,
         },
-        username,
-        uid: getuid().as_raw(),
+        uid,
         gid: getgid().as_raw(),
         host_display: display,
         merged_rootfs: options.merged_rootfs,
