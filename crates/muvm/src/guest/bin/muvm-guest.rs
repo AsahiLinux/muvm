@@ -129,5 +129,5 @@ fn main() -> Result<()> {
     });
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async { server_main(options.command.command, options.command.command_args).await })
+    rt.block_on(async { server_main().await })
 }

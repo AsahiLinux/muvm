@@ -1,20 +1,22 @@
-use std::collections::HashMap;
+use std::convert::Infallible;
+use std::env;
 use std::ffi::{c_char, CString};
+use std::fs::{self, File};
 use std::io::Write;
-use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::path::Path;
-use std::process::ExitCode;
-use std::{env, fs};
+use std::process::{Command, ExitCode};
 
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
     krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_add_vsock_port2, krun_create_ctx,
-    krun_set_env, krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
-    krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
-    VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
+    krun_set_console_output, krun_set_env, krun_set_gpu_options2, krun_set_log_level,
+    krun_set_passt_fd, krun_set_root, krun_set_vm_config, krun_set_workdir, krun_start_enter,
+    VIRGLRENDERER_DRM, VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB,
+    VIRGLRENDERER_USE_EGL,
 };
 use log::debug;
-use muvm::cli_options::options;
+use muvm::cli_options::{options, Options};
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::hidpipe_server::spawn_hidpipe_server;
@@ -22,17 +24,19 @@ use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
-use muvm::utils::launch::{
-    GuestConfiguration, Launch, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET,
-};
+use muvm::utils::launch::{GuestConfiguration, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET};
+use nix::fcntl::{fcntl, FcntlArg};
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
-use rustix::io::Errno;
+use rustix::io::{dup, Errno};
 use rustix::process::{
     geteuid, getgid, getrlimit, getuid, sched_setaffinity, setrlimit, CpuSet, Resource,
 };
 use serde::Serialize;
 use tempfile::NamedTempFile;
+use uuid::Uuid;
+
+const LOCK_FD_ENV_VAR: &str = "__MUVM_DO_LAUNCH_VM_LOCK__";
 
 #[derive(Serialize)]
 pub struct KrunConfig {
@@ -73,14 +77,28 @@ fn main() -> Result<ExitCode> {
     }
 
     let options = options().fallback_to_usage().run();
+    if let Ok(lock_fd) = env::var(LOCK_FD_ENV_VAR) {
+        let lock_fd = lock_fd.parse()?;
+        fcntl(lock_fd, FcntlArg::F_GETFD).context("Lockfile fd is not open")?;
+        // SAFETY: We verify that the file descriptor is valid.
+        // The file will not be read from/written to,
+        // so worse case if it's not a file nothing bad will happen,
+        // as we only care about calling `close` on Drop.
+        let _lock_file = unsafe { File::from_raw_fd(lock_fd) };
+        launch_vm(options)?;
+        unreachable!("`launch_vm` never returns");
+    }
 
-    let (_lock_file, command, command_args, env) = match launch_or_lock(
+    let cwd = env::current_dir()?;
+    let inherit_env = !options.no_inherit_env;
+    let (lock_file, command, command_args, env, cwd) = match launch_or_lock(
         options.command,
         options.command_args,
         options.env,
-        options.interactive,
-        options.tty,
+        cwd,
+        options.no_tty,
         options.privileged,
+        inherit_env,
     )? {
         LaunchResult::LaunchRequested(code) => {
             // There was a muvm instance already running and we've requested it
@@ -92,11 +110,33 @@ fn main() -> Result<ExitCode> {
             command,
             command_args,
             env,
-        } => (lock_file, command, command_args, env),
+            cwd,
+        } => (lock_file, command, command_args, env, cwd),
     };
 
-    let mut env = prepare_env_vars(env).context("Failed to prepare environment variables")?;
+    // Make it lose CLOEXEC
+    let lock_fd = dup(lock_file)?;
+    Command::new(env::current_exe()?)
+        .args(env::args())
+        .env(LOCK_FD_ENV_VAR, lock_fd.into_raw_fd().to_string())
+        .spawn()?;
+    match launch_or_lock(
+        command,
+        command_args,
+        env,
+        cwd,
+        options.no_tty,
+        options.privileged,
+        inherit_env,
+    )? {
+        LaunchResult::LockAcquired { .. } => Err(anyhow!("VM did not start")),
+        LaunchResult::LaunchRequested(code) => Ok(code),
+    }
+}
 
+fn launch_vm(options: Options) -> Result<Infallible> {
+    let mut env =
+        prepare_env_vars(Vec::new(), false).context("Failed to prepare environment variables")?;
     {
         // Set the log level to "off".
         //
@@ -277,6 +317,7 @@ fn main() -> Result<ExitCode> {
         }
     }
 
+    let console_base;
     if let Ok(run_path) = env::var("XDG_RUNTIME_DIR") {
         let pulse_path = Path::new(&run_path).join("pulse/native");
         if pulse_path.exists() {
@@ -344,6 +385,9 @@ fn main() -> Result<ExitCode> {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure vsock for guest server socket");
         }
+        console_base = run_path;
+    } else {
+        console_base = "/tmp".to_string();
     }
 
     let username = env::var("USER").context("Failed to get username from environment")?;
@@ -381,14 +425,6 @@ fn main() -> Result<ExitCode> {
 
     let display = env::var("DISPLAY").ok();
     let guest_config = GuestConfiguration {
-        command: Launch {
-            command,
-            command_args,
-            env: HashMap::new(),
-            vsock_port: 0,
-            tty: false,
-            privileged: false,
-        },
         username,
         uid: getuid().as_raw(),
         gid: getgid().as_raw(),
@@ -460,6 +496,22 @@ fn main() -> Result<ExitCode> {
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to set the environment variables in the guest");
+        }
+    }
+
+    {
+        let uuid = Uuid::now_v7();
+        let path = Path::new(&console_base).join(format!("muvm-{uuid}.console"));
+        let console_path = CString::new(
+            path.to_str()
+                .expect("console_path should not contain invalid UTF-8"),
+        )
+        .expect("console_path should not contain NUL character");
+        // SAFETY: `console_path` is a CString that outlives this call
+        let err = unsafe { krun_set_console_output(ctx_id, console_path.as_ptr()) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure console");
         }
     }
 

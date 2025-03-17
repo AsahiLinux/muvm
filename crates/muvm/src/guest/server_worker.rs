@@ -200,8 +200,9 @@ async fn handle_connection(mut stream: BufStream<UnixStream>) -> Result<ConnRequ
         vsock_port,
         tty,
         privileged,
+        cwd,
     } = read_request(&mut stream).await?;
-    debug!(command:?, command_args:?, env:?; "received launch request");
+    debug!(command:?, command_args:?, env:?, cwd:?; "received launch request");
 
     if command == Path::new("/muvmdropcaches") {
         // SAFETY: everything below should be async signal safe
@@ -274,7 +275,19 @@ async fn handle_connection(mut stream: BufStream<UnixStream>) -> Result<ConnRequ
         .envs(envs)
         .stdin(stdin)
         .stdout(stdout)
-        .stderr(stderr);
+        .stderr(stderr)
+        // The documentation says that if `command` is a relative path,
+        // it's ambiguous whether it should be interpreted relative
+        // to the parent's working directory or relative to `current_dir`.[0]
+        // Luckily for us, on UNIX in case of `Command::spawn`,
+        // it's implemented by calling `posix_spawn_file_actions_add_chdir`.[1]
+        // This is exactly what we want, as the user may want to run `muvm ./foo`
+        // in which case we need `./foo` to be interpreted relative to `current_dir`,
+        // not relative to cwd of the server worker.
+        //
+        // [0]: https://doc.rust-lang.org/stable/std/process/struct.Command.html#platform-specific-behavior-1
+        // [1]: https://github.com/rust-lang/rust/blob/cb50d4d8566b1ee97e9a5ef95a37a40936a62c30/library/std/src/sys/pal/unix/process/process_unix.rs#L705-L707
+        .current_dir(cwd);
     if tty {
         unsafe {
             cmd.pre_exec(|| {

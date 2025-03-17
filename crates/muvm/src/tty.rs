@@ -11,8 +11,8 @@ use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags, EpollTime
 use nix::sys::signal::{sigprocmask, SigSet, SigmaskHow, Signal};
 use nix::sys::signalfd::SignalFd;
 use rustix::termios::{
-    tcgetattr, tcgetwinsize, tcsetattr, ControlModes, InputModes, LocalModes, OptionalActions,
-    OutputModes, SpecialCodeIndex, Termios,
+    isatty, tcgetattr, tcgetwinsize, tcsetattr, ControlModes, InputModes, LocalModes,
+    OptionalActions, OutputModes, SpecialCodeIndex, Termios,
 };
 
 fn process_remote_msg(
@@ -151,4 +151,8 @@ pub fn run_io_host(listener: UnixListener, is_tty: bool) -> Result<u8> {
             _ => unreachable!(),
         }
     }
+}
+
+pub fn stdout_is_tty() -> bool {
+    isatty(stdout())
 }

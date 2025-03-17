@@ -16,11 +16,11 @@ pub struct Options {
     pub passt_socket: Option<PathBuf>,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
-    pub interactive: bool,
-    pub tty: bool,
+    pub no_tty: bool,
     pub privileged: bool,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
+    pub no_inherit_env: bool,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -109,13 +109,8 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
-    let interactive = long("interactive")
-        .short('i')
-        .help("Attach to the command's stdin/out after starting it")
-        .switch();
-    let tty = long("tty")
-        .short('t')
-        .help("Allocate a tty for the command")
+    let no_tty = long("no-tty")
+        .help("Force not allocating a tty for the command")
         .switch();
     let privileged = long("privileged")
         .help(
@@ -132,6 +127,12 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument::<String>("[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]")
         .many();
+    let no_inherit_env = long("no-inherit-env")
+        .help(
+            "Run the command with as little of the environment variables
+            passed in as possible, instead of inheriting most of them.",
+        )
+        .switch();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -147,11 +148,11 @@ pub fn options() -> OptionParser<Options> {
         passt_socket,
         fex_images,
         merged_rootfs,
-        interactive,
-        tty,
+        no_tty,
         privileged,
         publish_ports,
         emulator,
+        no_inherit_env,
         // positionals
         command,
         command_args,

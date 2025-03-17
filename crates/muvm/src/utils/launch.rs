@@ -12,6 +12,7 @@ pub struct Launch {
     pub vsock_port: u32,
     pub tty: bool,
     pub privileged: bool,
+    pub cwd: PathBuf,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
@@ -37,7 +38,6 @@ impl FromStr for Emulator {
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 pub struct GuestConfiguration {
-    pub command: Launch,
     pub username: String,
     pub uid: u32,
     pub gid: u32,
