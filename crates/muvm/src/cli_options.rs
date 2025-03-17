@@ -21,6 +21,7 @@ pub struct Options {
     pub privileged: bool,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
+    pub init_commands: Vec<PathBuf>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -132,6 +133,15 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument::<String>("[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]")
         .many();
+    let init_commands = long("execute-pre")
+        .short('x')
+        .help(
+            "Command to run inside the VM before guest server starts.
+            Can be used for e.g. setting up additional mounts.
+            Can be specified multiple times.",
+        )
+        .argument("COMMAND")
+        .many();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -152,6 +162,7 @@ pub fn options() -> OptionParser<Options> {
         privileged,
         publish_ports,
         emulator,
+        init_commands,
         // positionals
         command,
         command_args,
