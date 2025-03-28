@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::ffi::CString;
-use std::fs::{read_dir, read_link, File};
+use std::fs::{read_dir, read_link, DirEntry, File};
 use std::io::Write;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,10 @@ use rustix::mount::{
 use rustix::path::Arg;
 use serde_json::json;
 
-fn make_tmpfs(dir: &str) -> Result<()> {
+fn make_tmpfs<P>(dir: P) -> Result<()>
+where
+    P: rustix::path::Arg,
+{
     mount2(
         Some("tmpfs"),
         dir,
@@ -25,7 +28,10 @@ fn make_tmpfs(dir: &str) -> Result<()> {
     .context("Failed to mount tmpfs")
 }
 
-fn mkdir_fex(dir: &str) {
+fn mkdir_fex<P>(dir: P)
+where
+    P: rustix::path::Arg,
+{
     // Must succeed since /run/ was just mounted and is now an empty tmpfs.
     mkdir(
         dir,
@@ -39,19 +45,19 @@ fn do_mount_recursive_bind(source: &str, target: PathBuf) -> Result<()> {
     // the /run/muvm-host thing.
     if source == "/run" {
         mount_bind(source, &target)
-            .context(format!("Failed to mount {:?} on {:?}", &source, &target))?;
+            .with_context(|| format!("Failed to mount {source:?} on {target:?}"))?;
         let host = target.join("muvm-host");
-        mount_bind("/", &host).context(format!("Failed to mount / on {:?}", &host))?;
+        mount_bind("/", &host).with_context(|| format!("Failed to mount / on {host:?}"))?;
     } else {
         mount_recursive_bind(source, &target)
-            .context(format!("Failed to mount {:?} on {:?}", &source, &target))?;
+            .with_context(|| format!("Failed to mount {source:?} on {target:?}"))?;
     }
     Ok(())
 }
 
 fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
-    let dir = "/run/fex-emu/";
-    let dir_rootfs = dir.to_string() + "rootfs";
+    let dir = Path::new("/run/fex-emu/");
+    let dir_rootfs = dir.join("rootfs");
 
     // Make base directories
     mkdir_fex(dir);
@@ -69,22 +75,31 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
     }
 
     // Find /dev/vd*
-    for x in read_dir("/dev").unwrap() {
-        let file = x.unwrap();
-        let name = file.file_name().into_string().unwrap();
-        if !name.starts_with("vd") {
-            continue;
-        }
-
-        let path = file.path().into_os_string().into_string().unwrap();
-        let dir = dir.to_string() + &name;
-
+    let mut dev_vd_entries: Vec<DirEntry> = read_dir("/dev")
+        .context("Failed to read directory `/dev`")?
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to read directory entry in `/dev`")?
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .into_string()
+                .expect("file_name should not contain invalid UTF-8")
+                .starts_with("vd")
+        })
+        .collect();
+    // [readdir(3)](https://man7.org/linux/man-pages/man3/readdir.3.html#NOTES)
+    //
+    // > The order in which filenames are read by successive calls to readdir() depends on the
+    // > filesystem implementation; it is unlikely that the names will be sorted in any fashion.
+    dev_vd_entries.sort_unstable_by_key(|entry| entry.file_name());
+    for entry in dev_vd_entries {
+        let target_dir = dir.join(entry.file_name());
         // Mount the erofs images.
-        mkdir_fex(&dir);
-        mount2(Some(path), dir.clone(), Some("erofs"), flags, None)
-            .context("Failed to mount erofs")
-            .unwrap();
-        images.push(dir);
+        mkdir_fex(&target_dir);
+        mount2(Some(entry.path()), &target_dir, Some("erofs"), flags, None)
+            .context("Failed to mount erofs")?;
+        images.push(target_dir);
     }
 
     if images.is_empty() {
@@ -99,7 +114,7 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
         // For merged rootfs mode, we need to overlay subtrees separately
         // onto the real rootfs. First, insert the real rootfs as the
         // bottom-most "image".
-        images.insert(0, "/".to_owned());
+        images.insert(0, PathBuf::from("/"));
 
         let mut merge_dirs = HashSet::new();
         let mut non_dirs = HashSet::new();
@@ -115,25 +130,25 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
                     continue;
                 };
                 let source = entry.path();
-                let file_name = entry.file_name().to_str().unwrap().to_owned();
-                let target = Path::new(&dir_rootfs).join(&file_name);
+                let file_name = entry.file_name();
+                let target = dir_rootfs.join(&file_name);
 
                 if file_type.is_file() {
                     // File in the root fs, bind mount it from the uppermost layer
                     if non_dirs.insert(file_name) {
                         File::create(&target)?;
-                        mount_bind(&source, &target)?;
+                        mount_bind(source, target)?;
                     }
                 } else if file_type.is_symlink() {
                     // Symlink in the root fs, create it from the uppermost layer
                     if non_dirs.insert(file_name) {
                         let symlink_target = read_link(source)?;
-                        symlink(&symlink_target, &target)?;
+                        symlink(symlink_target, target)?;
                     }
                 } else {
                     // Directory, so we potentially have to overlayfs it
                     if merge_dirs.insert(file_name) {
-                        mkdir_fex(target.as_str()?);
+                        mkdir_fex(target);
                     }
                 }
             }
@@ -142,11 +157,11 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
         // Now, go through each potential merged dir and figure out which
         // layers have it, then mount an overlayfs (or bind if one layer).
         for dir in merge_dirs {
-            let target = Path::new(&dir_rootfs).join(&dir);
+            let target = dir_rootfs.join(&dir);
             let mut layers = Vec::new();
 
             for image in images.iter() {
-                let source = Path::new(image).join(&dir);
+                let source = image.join(&dir);
                 if source.is_dir() {
                     layers.push(source.as_str().unwrap().to_owned());
                 }
@@ -161,8 +176,8 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
                     layers[0] = "/run/muvm-host/etc".to_owned();
                 }
                 let opts = format!(
-                    "lowerdir={},metacopy=off,redirect_dir=nofollow,userxattr",
-                    layers.into_iter().rev().collect::<Vec<String>>().join(":")
+                    "lowerdir={lowerdir},metacopy=off,redirect_dir=nofollow,userxattr",
+                    lowerdir = layers.into_iter().rev().collect::<Vec<String>>().join(":")
                 );
                 let opts = CString::new(opts).unwrap();
                 let overlay = "overlay".to_string();
@@ -176,14 +191,19 @@ fn mount_fex_rootfs(merged_rootfs: bool) -> Result<()> {
         // Special case: Put back the /etc/resolv.conf overlay on top
         overlay_file(
             "/etc/resolv.conf",
-            &(dir_rootfs.clone() + "/etc/resolv.conf"),
+            dir_rootfs.join("etc/resolv.conf").as_str().unwrap(),
         )?;
     } else {
         if images.len() >= 2 {
             // Overlay the mounts together.
             let opts = format!(
-                "lowerdir={}",
-                images.into_iter().rev().collect::<Vec<String>>().join(":")
+                "lowerdir={lowerdir}",
+                lowerdir = images
+                    .into_iter()
+                    .rev()
+                    .map(|path| path.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>()
+                    .join(":")
             );
             let opts = CString::new(opts).unwrap();
             let overlay = "overlay".to_string();
