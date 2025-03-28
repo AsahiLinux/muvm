@@ -5,7 +5,7 @@ use std::panic::catch_unwind;
 use std::process::Command;
 use std::{cmp, env, fs, thread};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
 use muvm::guest::bridge::pipewire::start_pwbridge;
 use muvm::guest::bridge::x11::start_x11bridge;
@@ -94,13 +94,19 @@ fn main() -> Result<()> {
         }
     }
 
+    for init_command in options.init_commands {
+        let code = Command::new(&init_command)
+            .current_dir(&options.cwd)
+            .spawn()?
+            .wait()?;
+        if !code.success() {
+            return Err(anyhow!("Executing `{}` failed", init_command.display()));
+        }
+    }
+
     configure_network()?;
 
-    let run_path = match setup_user(
-        options.username,
-        Uid::from(options.uid),
-        Gid::from(options.gid),
-    ) {
+    let run_path = match setup_user(Uid::from(options.uid), Gid::from(options.gid)) {
         Ok(p) => p,
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
     };

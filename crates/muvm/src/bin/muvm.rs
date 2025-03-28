@@ -346,11 +346,12 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    let username = env::var("USER").context("Failed to get username from environment")?;
-    let user = User::from_name(&username)
+    let uid = getuid().as_raw();
+    let user = User::from_uid(uid.into())
         .map_err(Into::into)
         .and_then(|user| user.ok_or_else(|| anyhow!("requested entry not found")))
-        .with_context(|| format!("Failed to get user `{username}` from user database"))?;
+        .with_context(|| format!("Failed to get user `{uid}` from user database"))?;
+
     let workdir_path = CString::new(
         user.dir
             .to_str()
@@ -379,6 +380,7 @@ fn main() -> Result<ExitCode> {
 
     let muvm_guest_path = find_muvm_exec("muvm-guest")?;
 
+    let cwd = env::current_dir()?;
     let display = env::var("DISPLAY").ok();
     let guest_config = GuestConfiguration {
         command: Launch {
@@ -389,12 +391,13 @@ fn main() -> Result<ExitCode> {
             tty: false,
             privileged: false,
         },
-        username,
-        uid: getuid().as_raw(),
+        uid,
         gid: getgid().as_raw(),
         host_display: display,
         merged_rootfs: options.merged_rootfs,
         emulator: options.emulator,
+        cwd,
+        init_commands: options.init_commands,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;

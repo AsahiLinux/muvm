@@ -38,12 +38,13 @@ impl FromStr for Emulator {
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 pub struct GuestConfiguration {
     pub command: Launch,
-    pub username: String,
     pub uid: u32,
     pub gid: u32,
     pub host_display: Option<String>,
     pub merged_rootfs: bool,
     pub emulator: Option<Emulator>,
+    pub cwd: PathBuf,
+    pub init_commands: Vec<PathBuf>,
 }
 
 pub const PULSE_SOCKET: u32 = 3333;
