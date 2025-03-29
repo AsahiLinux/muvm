@@ -5,12 +5,14 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use rustix::fs::{flock, FlockOperation};
 
 use crate::env::prepare_env_vars;
-use crate::tty::{run_io_host, RawTerminal};
+use crate::tty::{run_io_host, stdout_is_tty, RawTerminal};
 use crate::utils::launch::Launch;
 use nix::unistd::unlink;
 use std::ops::Range;
@@ -26,6 +28,7 @@ pub enum LaunchResult {
         command: PathBuf,
         command_args: Vec<String>,
         env: Vec<(String, Option<String>)>,
+        cwd: PathBuf,
     },
 }
 
@@ -87,14 +90,10 @@ fn wrapped_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
-    interactive: bool,
-    tty: bool,
+    cwd: PathBuf,
+    no_tty: bool,
     privileged: bool,
 ) -> Result<ExitCode> {
-    if !interactive {
-        request_launch(command, command_args, env, 0, false, privileged)?;
-        return Ok(ExitCode::from(0));
-    }
     let run_path = env::var("XDG_RUNTIME_DIR")
         .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
     let socket_dir = Path::new(&run_path).join("krun/socket");
@@ -102,15 +101,9 @@ fn wrapped_launch(
     let path = socket_dir.join(format!("port-{vsock_port}"));
     _ = unlink(&path);
     let listener = UnixListener::bind(path).context("Failed to listen on vm socket")?;
-    let raw_tty = if tty {
-        Some(
-            RawTerminal::set()
-                .context("Asked to allocate a tty for the command, but stdin is not a tty")?,
-        )
-    } else {
-        None
-    };
-    request_launch(command, command_args, env, vsock_port, tty, privileged)?;
+    let tty = !no_tty && stdout_is_tty();
+    request_launch(command, command_args, env, cwd, vsock_port, tty, privileged)?;
+    let raw_tty = tty.then(|| RawTerminal::set().expect("Stdout should be a tty"));
     let code = run_io_host(listener, tty)?;
     drop(raw_tty);
     Ok(ExitCode::from(code))
@@ -120,9 +113,10 @@ pub fn launch_or_lock(
     command: PathBuf,
     command_args: Vec<String>,
     env: Vec<(String, Option<String>)>,
-    interactive: bool,
-    tty: bool,
+    cwd: PathBuf,
+    no_tty: bool,
     privileged: bool,
+    inherit_env: bool,
 ) -> Result<LaunchResult> {
     let lock_file = lock_file()?;
     match lock_file {
@@ -131,17 +125,18 @@ pub fn launch_or_lock(
             command,
             command_args,
             env,
+            cwd,
         }),
         None => {
-            let env = prepare_env_vars(env)?;
+            let env = prepare_env_vars(env, inherit_env)?;
             let mut tries = 0;
             loop {
                 match wrapped_launch(
                     command.clone(),
                     command_args.clone(),
                     env.clone(),
-                    interactive,
-                    tty,
+                    cwd.clone(),
+                    no_tty,
                     privileged,
                 ) {
                     Err(err) => match err.downcast_ref::<LaunchError>() {
@@ -192,6 +187,7 @@ pub fn request_launch(
     command: PathBuf,
     command_args: Vec<String>,
     env: HashMap<String, String>,
+    cwd: PathBuf,
     vsock_port: u32,
     tty: bool,
     privileged: bool,
@@ -199,12 +195,13 @@ pub fn request_launch(
     let run_path = env::var("XDG_RUNTIME_DIR")
         .map_err(|e| anyhow!("unable to get XDG_RUNTIME_DIR: {:?}", e))?;
     let socket_path = Path::new(&run_path).join("krun/server");
-    let mut stream = UnixStream::connect(socket_path).map_err(LaunchError::Connection)?;
+    let mut stream = connect_to_socket(socket_path)?;
 
     let launch = Launch {
         command,
         command_args,
         env,
+        cwd,
         vsock_port,
         tty,
         privileged,
@@ -232,5 +229,22 @@ pub fn request_launch(
         Ok(())
     } else {
         Err(LaunchError::Server(resp).into())
+    }
+}
+
+fn connect_to_socket(socket_path: PathBuf) -> Result<UnixStream> {
+    let mut tries = 0;
+    loop {
+        match UnixStream::connect(&socket_path).map_err(LaunchError::Connection) {
+            Ok(stream) => return Ok(stream),
+            Err(err) => {
+                if tries == 5 {
+                    return Err(err.into());
+                } else {
+                    thread::sleep(Duration::from_millis(500));
+                    tries += 1;
+                }
+            },
+        }
     }
 }

@@ -11,8 +11,9 @@
 ## Using
 
 ``` sh
-Usage: muvm [-c=CPU_LIST]... [-e=ENV]... [--mem=MEM] [--vram=VRAM] [--passt-socket=PATH] [-p=
-SERVER_PORT] [-f=FEX_IMAGE]... COMMAND [COMMAND_ARGS]...
+Usage: muvm [-c=CPU_LIST]... [-e=ENV]... [--mem=MEM] [--vram=VRAM] [--passt-socket=PATH] [-f=
+FEX_IMAGE]... [-m] [--no-tty] [--privileged] [-p=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>]... [
+--emu=EMU] [--no-inherit-env] COMMAND [COMMAND_ARGS]...
 
 Available positional items:
     COMMAND                  the command you want to execute in the vm
@@ -34,19 +35,28 @@ Available options:
                                      Machine Monitor) will attempt to return as many pages as
                                      possible to the host.
                              [default: 80% of total RAM]
-        --vram=VRAM          The amount of Video RAM, in MiB, that will be available to this
-                             microVM.
-                                     The memory configured for the microVM will not be reserved
-                                     immediately. Instead, it will be provided as the guest demands
-                                     it, and will be returned to the host once the guest releases
-                                     the underlying resources.
-                             [default: same as the total amount of RAM in the system]
+        --vram=VRAM          The amount of Video RAM, in MiB, that will reported by userspace in
+                             this microVM.
+                                     The userspace drivers will report this amount as heap size
+                                     to the clients running in the microVM.
+                             [default: 50% of total RAM]
         --passt-socket=PATH  Instead of starting passt, connect to passt socket at PATH
-    -p, --server-port=SERVER_PORT  Set the port to be used in server mode
-                             [default: 3334]
     -f, --fex-image=FEX_IMAGE  Adds an erofs file to be mounted as a FEX rootfs.
                                      May be specified multiple times.
                                      First the base image, then overlays in order.
+    -m, --merged-rootfs      Use merged rootfs for FEX (experimental)
+        --no-tty             Force not allocating a tty for the command
+        --privileged         Run the command as root inside the vm.
+                                 This notably does not allow root access to the host fs.
+    -p, --publish=<[[IP:][HOST_PORT]:]GUEST_PORT[/PROTOCOL]>
+                             Publish a guest’s port, or range of ports, to the host.
+                                 The syntax is similar to podman/docker.
+        --emu=EMU            Which emulator to use for running x86_64 binaries.
+                                      Valid options are "box" and "fex". If this argument is not
+                                      present, muvm will try to use FEX, falling back to Box if it
+                                      can't be found.
+        --no-inherit-env     Run the command with as little of the environment variables
+                                     passed in as possible, instead of inheriting most of them.
     -h, --help               Prints help information
 ```
 
