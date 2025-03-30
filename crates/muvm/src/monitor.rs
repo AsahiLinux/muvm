@@ -39,7 +39,7 @@ pub fn spawn_monitor() {
 fn set_guest_pressure(pressure: GuestPressure) -> Result<()> {
     if pressure == GuestPressure::Critical {
         debug!("requesting the guest to drop its caches");
-        // This is a fake command that tells muvm-server to write to "/proc/sys/vm/drop_caches"
+        // This is a fake command that tells `muvm-guest` server to write to "/proc/sys/vm/drop_caches"
         let command = PathBuf::from("/muvmdropcaches");
         let command_args = vec![];
         let env = HashMap::new();
