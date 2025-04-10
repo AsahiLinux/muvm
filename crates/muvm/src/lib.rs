@@ -1,4 +1,5 @@
 pub mod cli_options;
+pub mod config;
 pub mod cpu;
 pub mod env;
 pub mod hidpipe_common;
