@@ -15,6 +15,7 @@ use krun_sys::{
 };
 use log::debug;
 use muvm::cli_options::options;
+use muvm::config::Configuration;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
 use muvm::hidpipe_server::spawn_hidpipe_server;
@@ -73,6 +74,12 @@ fn main() -> Result<ExitCode> {
     }
 
     let options = options().fallback_to_usage().run();
+    let config = Configuration::parse_config_file()?;
+
+    let mut init_commands = options.init_commands;
+    if let Some(init_command) = config.execute_pre {
+        init_commands.insert(0, init_command);
+    }
 
     let (_lock_file, command, command_args, env) = match launch_or_lock(
         options.command,
@@ -397,7 +404,7 @@ fn main() -> Result<ExitCode> {
         merged_rootfs: options.merged_rootfs,
         emulator: options.emulator,
         cwd,
-        init_commands: options.init_commands,
+        init_commands,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;
