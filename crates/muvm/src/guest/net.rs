@@ -171,6 +171,12 @@ fn do_dhcp(rtnl: &NlRouter) -> Result<()> {
 
         while p < len {
             let o = msg[p];
+
+            if o == 0xff {
+                // Option 255: End (of options)
+                break;
+            }
+
             let l: u8 = msg[p + 1];
             p += 2; // Length doesn't include code and length field itself
 
@@ -195,9 +201,6 @@ fn do_dhcp(rtnl: &NlRouter) -> Result<()> {
 
                 // We don't know yet if IPv6 is available: don't go below 1280 B
                 mtu = mtu.clamp(1280, 65520);
-            } else if o == 0xff {
-                // Option 255: End (of options)
-                break;
             }
 
             p += l as usize;
