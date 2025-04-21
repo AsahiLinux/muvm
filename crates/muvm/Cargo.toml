@@ -1,6 +1,6 @@
 [package]
 name = "muvm"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Sergio Lopez <slp@redhat.com>", "Teoh Han Hui <teohhanhui@gmail.com>", "Sasha Finkelstein <fnkl.kernel@gmail.com>", "Asahi Lina <lina@asahilina.net>"]
 edition = "2021"
 rust-version = "1.80.0"
