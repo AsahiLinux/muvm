@@ -13,7 +13,7 @@ anyhow = { version = "1.0.82", default-features = false, features = ["std"] }
 bpaf = { version = "0.9.11", default-features = false, features = [] }
 byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
 const-str = { version = "0.6.2", default-features = false, features = [] }
-env_logger = { version = "0.11.3", default-features = false, features = ["auto-color", "humantime", "unstable-kv"] }
+env_logger = { version = "0.11.8", default-features = false, features = ["auto-color", "humantime", "kv"] }
 input-linux = { version = "0.7.0", default-features = false, features = [] }
 input-linux-sys = { version = "0.9.0", default-features = false, features = [] }
 krun-sys = { path = "../krun-sys", version = "1.9.1", default-features = false, features = [] }
