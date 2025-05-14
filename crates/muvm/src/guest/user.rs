@@ -16,7 +16,7 @@ pub fn setup_user(uid: Uid, gid: Gid) -> Result<PathBuf> {
 
     let path = tempfile::Builder::new()
         .prefix(&format!("muvm-run-{uid}-"))
-        .permissions(Permissions::from_mode(0o755))
+        .permissions(Permissions::from_mode(0o700))
         .tempdir()
         .context("Failed to create temp dir for `XDG_RUNTIME_DIR`")?
         .into_path();
