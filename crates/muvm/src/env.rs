@@ -49,7 +49,7 @@ pub fn prepare_env_vars(env: Vec<(String, Option<String>)>) -> Result<HashMap<St
                     match fs::read_to_string("/proc/device-tree/compatible") {
                         Ok(compatible) => {
                             for compat_id in compatible.split('\0') {
-                                if ASAHI_SOC_COMPAT_IDS.iter().any(|&s| s == compat_id) {
+                                if ASAHI_SOC_COMPAT_IDS.contains(&compat_id) {
                                     env_map.insert(
                                         "MESA_LOADER_DRIVER_OVERRIDE".to_owned(),
                                         "asahi".to_owned(),
