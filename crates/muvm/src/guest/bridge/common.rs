@@ -710,7 +710,7 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
     fn process_vgpu(&mut self) -> Result<bool> {
         let mut evt = DrmEvent::default();
         // SAFETY: `read` will return a valid DrmEvent
-        read(self.gpu_ctx.fd.as_raw_fd(), unsafe {
+        read(self.gpu_ctx.fd.as_fd(), unsafe {
             slice::from_raw_parts_mut(
                 &mut evt as *mut DrmEvent as *mut u8,
                 mem::size_of::<DrmEvent>(),

@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::{c_long, c_void, CString};
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{IoSlice, Write};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::process::exit;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -375,7 +375,7 @@ impl X11ProtocolHandler {
     }
 
     fn replace_futex_storage(
-        my_fd: RawFd,
+        my_fd: BorrowedFd,
         pid: Pid,
         shmem_path: &str,
         shmem_file: &mut File,
@@ -392,7 +392,7 @@ impl X11ProtocolHandler {
         for entry in fs::read_dir(format!("/proc/{pid}/fd"))? {
             let entry = entry?;
             if let Ok(file) = File::options().open(entry.path()) {
-                if fstat(file.as_raw_fd())?.st_ino == my_ino {
+                if fstat(file.as_fd())?.st_ino == my_ino {
                     fds_to_replace.push(entry.file_name().to_string_lossy().parse::<i32>()?);
                 }
             }
@@ -461,9 +461,9 @@ impl X11ProtocolHandler {
             return Err(Errno::EOPNOTSUPP.into());
         } else {
             let (fd, shmem_path) = mkstemp(SHM_TEMPLATE)?;
-            let mut shmem_file = unsafe { File::from_raw_fd(fd) };
+            let mut shmem_file = File::from(fd);
             let ret = Self::replace_futex_storage(
-                memfd.as_raw_fd(),
+                memfd.as_fd(),
                 Pid::from_raw(pid),
                 shmem_path.as_os_str().to_str().unwrap(),
                 &mut shmem_file,
