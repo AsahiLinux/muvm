@@ -329,25 +329,13 @@ impl Context {
             channel_type,
             protocol_version: CROSS_DOMAIN_PROTOCOL_VERSION,
         };
-        this.submit_cmd(&init_cmd, mem::size_of::<CrossDomainInit>(), None, None)?;
+        this.submit_cmd(&init_cmd, mem::size_of::<CrossDomainInit>(), None)?;
         this.poll_cmd()?;
         Ok(this)
     }
 
-    pub fn submit_cmd<T>(
-        &self,
-        cmd: &T,
-        cmd_size: usize,
-        ring_idx: Option<u32>,
-        ring_handle: Option<u32>,
-    ) -> Result<()> {
-        submit_cmd_raw(
-            self.fd.as_raw_fd() as c_int,
-            cmd,
-            cmd_size,
-            ring_idx,
-            ring_handle,
-        )
+    pub fn submit_cmd<T>(&self, cmd: &T, cmd_size: usize, ring_idx: Option<u32>) -> Result<()> {
+        submit_cmd_raw(self.fd.as_raw_fd() as c_int, cmd, cmd_size, ring_idx)
     }
 
     fn poll_cmd(&self) -> Result<()> {
@@ -356,18 +344,11 @@ impl Context {
             &cmd,
             mem::size_of::<CrossDomainPoll>(),
             Some(CROSS_DOMAIN_CHANNEL_RING),
-            None,
         )
     }
 }
 
-pub fn submit_cmd_raw<T>(
-    fd: c_int,
-    cmd: &T,
-    cmd_size: usize,
-    ring_idx: Option<u32>,
-    ring_handle: Option<u32>,
-) -> Result<()> {
+pub fn submit_cmd_raw<T>(fd: c_int, cmd: &T, cmd_size: usize, ring_idx: Option<u32>) -> Result<()> {
     let cmd_buf = cmd as *const T as *const u8;
     let mut exec = DrmVirtgpuExecbuffer {
         command: cmd_buf as u64,
@@ -378,17 +359,9 @@ pub fn submit_cmd_raw<T>(
         exec.ring_idx = ring_idx;
         exec.flags = VIRTGPU_EXECBUF_RING_IDX;
     }
-    let ring_handle = &ring_handle;
-    if let Some(ring_handle) = ring_handle {
-        exec.bo_handles = ring_handle as *const u32 as u64;
-        exec.num_bo_handles = 1;
-    }
     // SAFETY: `exec` and `cmd` outlive the call, and it does not modify `cmd`
     unsafe {
         drm_virtgpu_execbuffer(fd, &mut exec)?;
-    }
-    if ring_handle.is_some() {
-        unimplemented!();
     }
     Ok(())
 }
@@ -488,6 +461,8 @@ pub trait ProtocolHandler: Sized {
     ) -> Result<StreamSendResult<Self::ResourceFinalizer>>;
 
     fn process_vgpu_extra(this: &mut Client<Self>, cmd: u8) -> Result<()>;
+
+    fn process_fd_extra(this: &mut Client<Self>, fd: u64, events: EpollFlags) -> Result<()>;
 }
 
 pub struct Client<'a, P: ProtocolHandler> {
@@ -695,7 +670,7 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
             ring_msg.identifier_types[i] = res.identifier_type;
             ring_msg.identifier_sizes[i] = res.identifier_size;
         }
-        self.gpu_ctx.submit_cmd(&ring_msg, size, None, None)?;
+        self.gpu_ctx.submit_cmd(&ring_msg, size, None)?;
         for fin in finalizers {
             fin.finalize(self)?;
         }
@@ -913,7 +888,16 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
                 );
             }
         } else {
-            unimplemented!()
+            let close = P::process_fd_extra(self, fd, events)
+                .map_err(|e| {
+                    let srv_id = self.gpu_ctx.fd.as_raw_fd() as u64;
+                    eprintln!("Server {srv_id} disconnected with error: {e:?}");
+                    e
+                })
+                .is_err();
+            if close {
+                self.sub_poll.close();
+            }
         }
     }
 }

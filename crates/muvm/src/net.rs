@@ -24,7 +24,7 @@ fn parse_range(r: &str) -> Result<(u32, u32)> {
 }
 
 impl PublishSpec<'_> {
-    fn parse(mut arg: &str) -> Result<PublishSpec> {
+    fn parse(mut arg: &str) -> Result<PublishSpec<'_>> {
         let mut udp = false;
         if arg.ends_with("/udp") {
             udp = true;

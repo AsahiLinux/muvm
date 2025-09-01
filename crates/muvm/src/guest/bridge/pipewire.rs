@@ -17,6 +17,7 @@ use crate::guest::bridge::common::{
 const CROSS_DOMAIN_CHANNEL_TYPE_PW: u32 = 0x10;
 const CROSS_DOMAIN_CMD_READ_EVENTFD_NEW: u8 = 11;
 const CROSS_DOMAIN_CMD_READ: u8 = 6;
+const CROSS_DOMAIN_CMD_WRITE: u8 = 7;
 
 const SPA_TYPE_STRUCT: u32 = 14;
 
@@ -149,6 +150,7 @@ impl MessageResourceFinalizer for PipeWireResourceFinalizer {
 
 struct CrossDomainEventFd {
     event_fd: EventFd,
+    resource: u32,
 }
 
 struct ClientNodeData {
@@ -172,14 +174,22 @@ struct PipeWireProtocolHandler {
 }
 
 impl PipeWireProtocolHandler {
-    fn create_guest_to_host_eventfd(this: &mut Client<Self>, node_id: u32) -> Result<OwnedFd> {
+    fn create_guest_to_host_eventfd(
+        this: &mut Client<Self>,
+        node_id: u32,
+        resource: CrossDomainResource,
+    ) -> Result<OwnedFd> {
         let efd = EventFd::from_flags(EfdFlags::EFD_NONBLOCK)?;
         let ofd = efd.as_fd().try_clone_to_owned()?;
         this.sub_poll.add(efd.as_fd(), EpollFlags::EPOLLIN);
         let raw = efd.as_raw_fd() as u64;
-        this.protocol_handler
-            .guest_to_host_eventfds
-            .insert(raw, CrossDomainEventFd { event_fd: efd });
+        this.protocol_handler.guest_to_host_eventfds.insert(
+            raw,
+            CrossDomainEventFd {
+                event_fd: efd,
+                resource: resource.identifier,
+            },
+        );
         this.protocol_handler
             .client_nodes
             .get_mut(&node_id)
@@ -208,10 +218,14 @@ impl PipeWireProtocolHandler {
             .unwrap()
             .host_to_guest
             .push(resource.identifier);
-        this.gpu_ctx.submit_cmd(&msg, msg_size, None, None)?;
-        this.protocol_handler
-            .host_to_guest_eventfds
-            .insert(resource.identifier, CrossDomainEventFd { event_fd: efd });
+        this.gpu_ctx.submit_cmd(&msg, msg_size, None)?;
+        this.protocol_handler.host_to_guest_eventfds.insert(
+            resource.identifier,
+            CrossDomainEventFd {
+                event_fd: efd,
+                resource: resource.identifier,
+            },
+        );
         Ok(ofd)
     }
 }
@@ -249,13 +263,13 @@ impl ProtocolHandler for PipeWireProtocolHandler {
                 fds.push(this.virtgpu_id_to_prime(rsc)?);
             } else if this.protocol_handler.client_nodes.contains_key(&hdr.id) {
                 if hdr.opcode == PW_OPC_CLIENT_NODE_SET_ACTIVATION {
-                    resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id)?);
+                    let rsc = resources.pop_front().ok_or(Errno::EIO)?;
+                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc)?);
                 } else if hdr.opcode == PW_OPC_CLIENT_NODE_TRANSPORT {
                     let rsc1 = resources.pop_front().ok_or(Errno::EIO)?;
                     fds.push(Self::create_host_to_guest_eventfd(this, hdr.id, rsc1)?);
-                    resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id)?);
+                    let rsc2 = resources.pop_front().ok_or(Errno::EIO)?;
+                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc2)?);
                 } else {
                     unimplemented!()
                 }
@@ -331,6 +345,25 @@ impl ProtocolHandler for PipeWireProtocolHandler {
         } else {
             Err(Errno::ENOENT.into())
         }
+    }
+
+    fn process_fd_extra(this: &mut Client<Self>, fd: u64, _: EpollFlags) -> Result<()> {
+        let efd = this
+            .protocol_handler
+            .guest_to_host_eventfds
+            .get(&fd)
+            .ok_or(Errno::ENOENT)?;
+        let msg_size = mem::size_of::<CrossDomainReadWrite<[u8; mem::size_of::<u64>()]>>();
+        let val = efd.event_fd.read()?;
+        let msg = CrossDomainReadWrite {
+            hdr: CrossDomainHeader::new(CROSS_DOMAIN_CMD_WRITE, msg_size as u16),
+            identifier: efd.resource,
+            hang_up: 0,
+            opaque_data_size: mem::size_of::<u64>() as u32,
+            pad: 0,
+            data: val.to_ne_bytes(),
+        };
+        this.gpu_ctx.submit_cmd(&msg, msg_size, None)
     }
 }
 

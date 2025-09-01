@@ -104,7 +104,7 @@ struct EvdevContainer {
     names_to_fds: HashMap<String, u64>,
 }
 
-fn insert_entry<K, V>(entry: hash_map::Entry<K, V>, v: V) -> &V {
+fn insert_entry<K, V>(entry: hash_map::Entry<'_, K, V>, v: V) -> &V {
     match entry {
         hash_map::Entry::Vacant(e) => e.insert(v),
         hash_map::Entry::Occupied(mut e) => {
