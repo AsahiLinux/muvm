@@ -19,6 +19,7 @@ use nix::libc::{
     SYS_openat, AT_FDCWD, MAP_ANONYMOUS, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, O_CLOEXEC, O_RDWR,
     PROT_READ, PROT_WRITE,
 };
+use nix::sys::epoll::EpollFlags;
 use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
 use nix::sys::ptrace;
 use nix::sys::signal::Signal;
@@ -121,7 +122,7 @@ impl MessageResourceFinalizer for X11ResourceFinalizer {
                 };
                 client
                     .gpu_ctx
-                    .submit_cmd(&ft_msg, ft_destroy_msg_size, None, None)?;
+                    .submit_cmd(&ft_msg, ft_destroy_msg_size, None)?;
             },
         }
         Ok(())
@@ -337,6 +338,9 @@ impl ProtocolHandler for X11ProtocolHandler {
         };
         this.protocol_handler.process_futex_signal(recv)
     }
+    fn process_fd_extra(_: &mut Client<Self>, _: u64, _: EpollFlags) -> Result<()> {
+        unreachable!()
+    }
 }
 
 impl X11ProtocolHandler {
@@ -494,8 +498,7 @@ impl X11ProtocolHandler {
             handle: handle.handle,
             pad: 0,
         };
-        this.gpu_ctx
-            .submit_cmd(&ft_msg, ft_new_msg_size, None, None)?;
+        this.gpu_ctx.submit_cmd(&ft_msg, ft_new_msg_size, None)?;
         let fd = this.gpu_ctx.fd.as_raw_fd() as c_int;
         this.protocol_handler
             .futex_watchers
@@ -597,7 +600,7 @@ impl FutexWatcherThread {
                     id: xid,
                     pad: 0,
                 };
-                common::submit_cmd_raw(fd, &ft_signal_cmd, ft_signal_msg_size, None, None).unwrap();
+                common::submit_cmd_raw(fd, &ft_signal_cmd, ft_signal_msg_size, None).unwrap();
             }
         });
         FutexWatcherThread {
