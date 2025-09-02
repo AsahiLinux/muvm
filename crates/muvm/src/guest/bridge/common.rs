@@ -11,6 +11,7 @@ use std::rc::{Rc, Weak};
 use std::{env, fs, mem, slice, thread};
 
 use anyhow::Result;
+use log::debug;
 use nix::errno::Errno;
 use nix::libc::{c_int, c_void, off_t, O_RDWR};
 use nix::sys::epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags, EpollTimeout};
@@ -874,9 +875,15 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
         if fd == self.socket.as_raw_fd() as u64 {
             let event = self
                 .process_socket(events)
-                .map_err(|e| {
-                    eprintln!("Client {fd} disconnected with error: {e:?}");
-                    e
+                .map_err(|err| {
+                    if let Some(errno) = err.downcast_ref::<Errno>() {
+                        if errno == &Errno::ECONNRESET {
+                            debug!("Client {fd} disconnected with error: {err:?}");
+                            return err;
+                        }
+                    }
+                    eprintln!("Client {fd} disconnected with error: {err:?}");
+                    err
                 })
                 .unwrap_or(ClientEvent::Close);
             match event {
