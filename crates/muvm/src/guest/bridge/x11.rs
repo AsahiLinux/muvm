@@ -12,6 +12,7 @@ use std::thread::JoinHandle;
 use std::{fs, mem, ptr, thread};
 
 use anyhow::Result;
+use log::debug;
 use nix::errno::Errno;
 use nix::fcntl::readlink;
 use nix::libc::{
@@ -177,7 +178,7 @@ impl ProtocolHandler for X11ProtocolHandler {
             });
         }
         if data.len() < 32 {
-            eprintln!(
+            debug!(
                 "X11 message truncated (expected at least 32 bytes, got {})",
                 data.len(),
             );
@@ -228,7 +229,7 @@ impl ProtocolHandler for X11ProtocolHandler {
             });
         }
         if buf.len() < 4 {
-            eprintln!(
+            debug!(
                 "X11 message truncated (expected at least 4 bytes, got {})",
                 buf.len(),
             );
@@ -237,7 +238,7 @@ impl ProtocolHandler for X11ProtocolHandler {
         let mut req_len = u16::from_ne_bytes(buf[2..4].try_into().unwrap()) as usize * 4;
         if req_len == 0 {
             if buf.len() < 8 {
-                eprintln!(
+                debug!(
                     "X11 message truncated (expected at least 8 bytes, got {})",
                     buf.len(),
                 );

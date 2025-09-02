@@ -4,6 +4,7 @@ use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::{env, mem};
 
 use anyhow::Result;
+use log::debug;
 use nix::errno::Errno;
 use nix::sys::epoll::EpollFlags;
 use nix::sys::eventfd::{EfdFlags, EventFd};
@@ -249,7 +250,7 @@ impl ProtocolHandler for PipeWireProtocolHandler {
         resources: &mut VecDeque<CrossDomainResource>,
     ) -> Result<StreamRecvResult> {
         if data.len() < PipeWireHeader::SIZE {
-            eprintln!(
+            debug!(
                 "Pipewire message truncated (expected at least 16 bytes, got {})",
                 data.len(),
             );
@@ -288,7 +289,7 @@ impl ProtocolHandler for PipeWireProtocolHandler {
         data: &mut [u8],
     ) -> Result<StreamSendResult<Self::ResourceFinalizer>> {
         if data.len() < PipeWireHeader::SIZE {
-            eprintln!(
+            debug!(
                 "Pipewire message truncated (expected at least 16 bytes, got {})",
                 data.len(),
             );
