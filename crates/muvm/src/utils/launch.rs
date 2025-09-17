@@ -45,6 +45,7 @@ pub struct GuestConfiguration {
     pub emulator: Option<Emulator>,
     pub cwd: PathBuf,
     pub init_commands: Vec<PathBuf>,
+    pub user_init_commands: Vec<PathBuf>,
 }
 
 pub const PULSE_SOCKET: u32 = 3333;

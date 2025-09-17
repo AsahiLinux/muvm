@@ -22,6 +22,7 @@ pub struct Options {
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
     pub init_commands: Vec<PathBuf>,
+    pub user_init_commands: Vec<PathBuf>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -136,8 +137,16 @@ pub fn options() -> OptionParser<Options> {
     let init_commands = long("execute-pre")
         .short('x')
         .help(
-            "Command to run inside the VM before guest server starts.
+            "Command to run inside the VM before guest server starts, while still running as root.
             Can be used for e.g. setting up additional mounts.
+            Can be specified multiple times.",
+        )
+        .argument("COMMAND")
+        .many();
+    let user_init_commands = long("user-execute-pre")
+        .short('X')
+        .help(
+            "Command to run inside the VM before guest server starts, but after the user is set up.
             Can be specified multiple times.",
         )
         .argument("COMMAND")
@@ -163,6 +172,7 @@ pub fn options() -> OptionParser<Options> {
         publish_ports,
         emulator,
         init_commands,
+        user_init_commands,
         // positionals
         command,
         command_args,
