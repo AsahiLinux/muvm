@@ -109,7 +109,8 @@ fn main() -> Result<ExitCode> {
     for init_command in options.init_commands {
         let code = Command::new(&init_command)
             .current_dir(&options.cwd)
-            .spawn()?
+            .spawn()
+            .with_context(|| format!("Failed to execute init command {init_command:?}"))?
             .wait()?;
         if !code.success() {
             return Err(anyhow!("Executing `{}` failed", init_command.display()));
