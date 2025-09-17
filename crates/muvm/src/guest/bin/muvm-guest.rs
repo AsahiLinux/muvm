@@ -93,13 +93,16 @@ fn main() -> Result<()> {
             Emulator::Box => setup_box()?,
             Emulator::Fex => setup_fex()?,
         };
-    } else if let Err(err) = setup_fex() {
-        eprintln!("Error setting up FEX in binfmt_misc: {err}");
-        eprintln!("Failed to find or configure FEX, falling back to Box");
+    } else {
+        #[cfg(target_arch = "aarch64")]
+        if let Err(err) = setup_fex() {
+            eprintln!("Error setting up FEX in binfmt_misc: {err}");
+            eprintln!("Failed to find or configure FEX, falling back to Box");
 
-        if let Err(err) = setup_box() {
-            eprintln!("Error setting up Box in binfmt_misc: {err}");
-            eprintln!("No emulators were configured, x86 emulation may not work");
+            if let Err(err) = setup_box() {
+                eprintln!("Error setting up Box in binfmt_misc: {err}");
+                eprintln!("No emulators were configured, x86 emulation may not work");
+            }
         }
     }
 
