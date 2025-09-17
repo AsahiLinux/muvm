@@ -25,7 +25,7 @@ where
 
     if let Ok(xauthority) = std::env::var("XAUTHORITY") {
         let src_path = format!("/run/muvm-host/{xauthority}");
-        let mut rdr = File::open(src_path)?;
+        let mut rdr = File::open(src_path).context("Failed to open XAUTHORITY")?;
 
         let dst_path = run_path.as_ref().join("xauth");
         let mut wtr = File::options()
