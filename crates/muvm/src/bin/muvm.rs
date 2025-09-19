@@ -11,7 +11,8 @@ use krun_sys::{
     krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_add_vsock_port2, krun_create_ctx,
     krun_set_env, krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
     krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
-    VIRGLRENDERER_THREAD_SYNC, VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL,
+    VIRGLRENDERER_NO_VIRGL, VIRGLRENDERER_RENDER_SERVER, VIRGLRENDERER_THREAD_SYNC,
+    VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL, VIRGLRENDERER_VENUS,
 };
 use log::debug;
 use muvm::cli_options::options;
@@ -184,8 +185,14 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to configure the number of vCPUs and/or the amount of RAM");
         }
 
+        let virgl_mode = match options.gpu_mode.unwrap_or_default() {
+            muvm::cli_options::GpuMode::Drm => VIRGLRENDERER_DRM,
+            muvm::cli_options::GpuMode::Venus => VIRGLRENDERER_VENUS | VIRGLRENDERER_RENDER_SERVER,
+            muvm::cli_options::GpuMode::Software => 0,
+        };
         let virgl_flags = VIRGLRENDERER_USE_EGL
-            | VIRGLRENDERER_DRM
+            | VIRGLRENDERER_NO_VIRGL /* Legacy method that we don't support; interferes with software-only mode */
+            | virgl_mode
             | VIRGLRENDERER_THREAD_SYNC
             | VIRGLRENDERER_USE_ASYNC_FENCE_CB;
         // SAFETY: Safe as no pointers involved.
@@ -434,6 +441,10 @@ fn main() -> Result<ExitCode> {
     // display name in muvm-guest.
     if let Ok(xauthority) = env::var("XAUTHORITY") {
         env.insert("XAUTHORITY".to_owned(), xauthority);
+    }
+
+    if options.gpu_mode == Some(muvm::cli_options::GpuMode::Venus) {
+        env.insert("MESA_LOADER_DRIVER_OVERRIDE".to_owned(), "zink".to_owned());
     }
 
     let krun_config = KrunBaseConfig {
