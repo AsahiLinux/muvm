@@ -7,6 +7,29 @@ use bpaf::{any, construct, long, positional, OptionParser, Parser};
 use crate::types::MiB;
 use crate::utils::launch::Emulator;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum GpuMode {
+    #[default]
+    Drm,
+    Venus,
+    Software,
+}
+
+impl std::str::FromStr for GpuMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String>
+    where
+        Self: Sized,
+    {
+        match s {
+            "drm" => Ok(GpuMode::Drm),
+            "venus" => Ok(GpuMode::Venus),
+            "software" => Ok(GpuMode::Software),
+            x => Err(format!("Expected drm|venus|software, got '{x}'")),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Options {
     pub cpu_list: Vec<Range<u16>>,
@@ -19,6 +42,7 @@ pub struct Options {
     pub interactive: bool,
     pub tty: bool,
     pub privileged: bool,
+    pub gpu_mode: Option<GpuMode>,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
     pub init_commands: Vec<PathBuf>,
@@ -125,6 +149,10 @@ pub fn options() -> OptionParser<Options> {
         This notably does not allow root access to the host fs.",
         )
         .switch();
+    let gpu_mode = long("gpu-mode")
+        .help("Use the given GPU virtualization method")
+        .argument::<GpuMode>("drm|venus|software")
+        .optional();
     let publish_ports = long("publish")
         .short('p')
         .help(
@@ -169,6 +197,7 @@ pub fn options() -> OptionParser<Options> {
         interactive,
         tty,
         privileged,
+        gpu_mode,
         publish_ports,
         emulator,
         init_commands,
