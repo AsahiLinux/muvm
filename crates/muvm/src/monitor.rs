@@ -49,8 +49,8 @@ fn set_guest_pressure(pressure: GuestPressure) -> Result<()> {
     let wsf: u32 = pressure.into();
     debug!("setting watermark_scale_factor to {wsf}");
 
-    let command = PathBuf::from(std::option_env!("MUVM_SYSCTL_PATH").unwrap_or("/sbin/sysctl"));
-    let command_args = vec![format!("vm.watermark_scale_factor={}", wsf)];
+    let command = PathBuf::from("/muvmwatermarkscalefactor");
+    let command_args = vec![format!("{wsf}")];
     let env = HashMap::new();
     request_launch(command, command_args, env, 0, false, true)
 }

@@ -34,7 +34,7 @@ use crate::utils::stdio::make_stdout_stderr;
 use crate::utils::tty::*;
 
 pub enum ConnRequest {
-    DropCaches,
+    HandledByBuiltin,
     ExecuteCommand {
         command: PathBuf,
         child: Child,
@@ -83,7 +83,7 @@ impl Worker {
 
                     match handle_connection(stream).await {
                         Ok(request) => match request {
-                            ConnRequest::DropCaches => {},
+                            ConnRequest::HandledByBuiltin => {},
                             ConnRequest::ExecuteCommand {command, mut child, stop_pipe } => {
                                 self.child_set.spawn(async move { (command, child.wait().await, stop_pipe) });
                                 self.set_child_processes(self.child_set.len());
@@ -190,6 +190,41 @@ async fn read_request(stream: &mut BufStream<UnixStream>) -> Result<Launch> {
     }
 }
 
+async fn write_to(
+    mut stream: BufStream<UnixStream>,
+    path: &'static std::ffi::CStr,
+    data: &[u8],
+) -> Result<ConnRequest> {
+    // SAFETY: `open` and `write` are async signal safe
+    let code = unsafe {
+        user::run_as_root(|| {
+            let fd = nix::libc::open(path.as_ptr(), nix::libc::O_WRONLY);
+            if fd < 0 {
+                return 1;
+            }
+            let written = nix::libc::write(fd, data.as_ptr() as *const _, data.len()) as usize;
+            if written == data.len() {
+                0
+            } else {
+                2
+            }
+        })
+        .with_context(|| format!("Failed to write to {path:?}"))?
+    };
+    match code {
+        0 => {
+            stream.write_all(b"OK").await.ok();
+            stream.flush().await.ok();
+            Ok(ConnRequest::HandledByBuiltin)
+        },
+        1 => Err(anyhow!("Failed to open {path:?} for writing")),
+        2 => Err(anyhow!("Failed to write to {path:?}")),
+        err => Err(anyhow!(
+            "Unexpected return status when attempting to write to {path:?}: {err}"
+        )),
+    }
+}
+
 async fn handle_connection(mut stream: BufStream<UnixStream>) -> Result<ConnRequest> {
     let mut envs: HashMap<String, String> = env::vars().collect();
 
@@ -204,38 +239,17 @@ async fn handle_connection(mut stream: BufStream<UnixStream>) -> Result<ConnRequ
     debug!(command:?, command_args:?, env:?; "received launch request");
 
     if command == Path::new("/muvmdropcaches") {
-        // SAFETY: everything below should be async signal safe
-        let code = unsafe {
-            user::run_as_root(|| {
-                let fd = nix::libc::open(c"/proc/sys/vm/drop_caches".as_ptr(), nix::libc::O_WRONLY);
-                if fd < 0 {
-                    return 1;
-                }
-                let data = b"1";
-                let written = nix::libc::write(fd, data.as_ptr() as *const _, data.len()) as usize;
-                if written == data.len() {
-                    0
-                } else {
-                    2
-                }
-            })
-            .context("Failed to drop caches")?
+        return write_to(stream, c"/proc/sys/vm/drop_caches", b"1").await;
+    } else if command == Path::new("/muvmwatermarkscalefactor") {
+        let Some(data) = command_args.first() else {
+            return Err(anyhow!("muvmwatermarkscalefactor: missing arg"));
         };
-        return match code {
-            0 => {
-                stream.write_all(b"OK").await.ok();
-                stream.flush().await.ok();
-                Ok(ConnRequest::DropCaches)
-            },
-            1 => Err(anyhow!(
-                "Failed to open /proc/sys/vm/drop_caches for writing"
-            )),
-            2 => Err(anyhow!("Failed to write to /proc/sys/vm/drop_caches")),
-            e => Err(anyhow!(
-                "Unexpected return status when attempting to drop caches: {}",
-                e
-            )),
-        };
+        return write_to(
+            stream,
+            c"/proc/sys/vm/watermark_scale_factor",
+            data.as_bytes(),
+        )
+        .await;
     }
 
     envs.extend(env);
