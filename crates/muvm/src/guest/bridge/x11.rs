@@ -51,13 +51,70 @@ const DRI3_OPCODE_PIXMAP_FROM_BUFFERS: u8 = 7;
 const PRESENT_OPCODE_PRESENT_PIXMAP: u8 = 1;
 pub const SHM_TEMPLATE: &str = "/dev/shm/krshm-XXXXXX";
 pub const SHM_DIR: &str = "/dev/shm/";
-const SYSCALL_INSTR: u32 = 0xd4000001;
 static SYSCALL_OFFSET: OnceLock<usize> = OnceLock::new();
 const CROSS_DOMAIN_CHANNEL_TYPE_X11: u32 = 0x11;
 const CROSS_DOMAIN_ID_TYPE_SHM: u32 = 5;
 const CROSS_DOMAIN_CMD_FUTEX_NEW: u8 = 8;
 const CROSS_DOMAIN_CMD_FUTEX_SIGNAL: u8 = 9;
 const CROSS_DOMAIN_CMD_FUTEX_DESTROY: u8 = 10;
+
+#[cfg(target_arch = "aarch64")]
+mod arch {
+    use nix::libc::{c_long, c_ulonglong, user_regs_struct};
+    pub type SyscallInstr = u32;
+    pub const SYSCALL_INSTR: SyscallInstr = 0xd4000001;
+
+    pub fn set_syscall_addr(regs: &mut user_regs_struct, syscall_addr: usize) {
+        regs.pc = syscall_addr as u64;
+    }
+
+    pub fn fill_syscall_args(
+        regs: &mut user_regs_struct,
+        syscall_no: c_long,
+        args: &[c_ulonglong; 6],
+    ) {
+        regs.regs[..6].copy_from_slice(args);
+        regs.regs[8] = syscall_no as c_ulonglong;
+    }
+
+    pub fn get_syscall_result(regs: &user_regs_struct) -> c_ulonglong {
+        regs.regs[0]
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod arch {
+    use nix::libc::{c_long, c_ulonglong, user_regs_struct};
+    pub type SyscallInstr = u16;
+    pub const SYSCALL_INSTR: SyscallInstr = 0x05_0f;
+
+    pub fn set_syscall_addr(regs: &mut user_regs_struct, syscall_addr: usize) {
+        regs.rip = syscall_addr as u64;
+    }
+
+    pub fn fill_syscall_args(
+        regs: &mut user_regs_struct,
+        syscall_no: c_long,
+        args: &[c_ulonglong; 6],
+    ) {
+        regs.rdi = args[0];
+        regs.rsi = args[1];
+        regs.rdx = args[2];
+        regs.r10 = args[3];
+        regs.r8 = args[4];
+        regs.r9 = args[5];
+        regs.rax = syscall_no as c_ulonglong;
+    }
+
+    pub fn get_syscall_result(regs: &user_regs_struct) -> c_ulonglong {
+        regs.rax
+    }
+}
+
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+mod arch {
+    pub const SYSCALL_INSTR: u32 = 0xffffffff;
+}
 
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -458,7 +515,7 @@ impl X11ProtocolHandler {
         // Allow everything in /dev/shm (including paths with trailing '(deleted)')
         let shmem_file = if filename.starts_with(SHM_DIR) {
             File::from(memfd)
-        } else if cfg!(not(target_arch = "aarch64")) {
+        } else if cfg!(not(any(target_arch = "aarch64", target_arch = "x86_64"))) {
             return Err(Errno::EOPNOTSUPP.into());
         } else {
             let (fd, shmem_path) = mkstemp(SHM_TEMPLATE)?;
@@ -638,8 +695,7 @@ struct RemoteCaller {
 }
 
 impl RemoteCaller {
-    // This is arch-specific, so gate it off of x86_64 builds done for CI purposes
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     fn with<R, F>(pid: Pid, f: F) -> Result<R>
     where
         F: FnOnce(&RemoteCaller) -> Result<R>,
@@ -651,7 +707,7 @@ impl RemoteCaller {
         let syscall_addr = vdso_start + SYSCALL_OFFSET.get().unwrap();
 
         let mut regs = old_regs;
-        regs.pc = syscall_addr as u64;
+        arch::set_syscall_addr(&mut regs, syscall_addr);
         ptrace::setregs(pid, regs)?;
         let res = f(&RemoteCaller { regs, pid })?;
         ptrace::setregs(pid, old_regs)?;
@@ -711,12 +767,10 @@ impl RemoteCaller {
         .map(|x| x as i32)
     }
 
-    // This is arch-specific, so gate it off of x86_64 builds done for CI purposes
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     fn syscall(&self, syscall_no: c_long, args: [c_ulonglong; 6]) -> Result<c_ulonglong> {
         let mut regs = self.regs;
-        regs.regs[..6].copy_from_slice(&args);
-        regs.regs[8] = syscall_no as c_ulonglong;
+        arch::fill_syscall_args(&mut regs, syscall_no, &args);
         ptrace::setregs(self.pid, regs)?;
         ptrace::step(self.pid, None)?;
         let evt = waitpid(self.pid, Some(WaitPidFlag::__WALL))?;
@@ -724,17 +778,18 @@ impl RemoteCaller {
             unimplemented!();
         }
         regs = ptrace::getregs(self.pid)?;
-        Ok(regs.regs[0])
+        Ok(arch::get_syscall_result(&regs))
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     fn with<R, F>(_pid: Pid, _f: F) -> Result<R>
     where
         F: FnOnce(&RemoteCaller) -> Result<R>,
     {
         Err(Errno::EOPNOTSUPP.into())
     }
-    #[cfg(not(target_arch = "aarch64"))]
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     fn syscall(&self, _syscall_no: c_long, _args: [c_ulonglong; 6]) -> Result<c_ulonglong> {
         Err(Errno::EOPNOTSUPP.into())
     }
@@ -799,10 +854,10 @@ pub fn start_x11bridge(display: u32) {
     // the same vDSO (which should be true if they are running under the same
     // kernel!)
     let (vdso_start, vdso_end) = find_vdso(None).unwrap();
-    for off in (0..(vdso_end - vdso_start)).step_by(4) {
+    for off in (0..(vdso_end - vdso_start)).step_by(mem::size_of::<arch::SyscallInstr>()) {
         let addr = vdso_start + off;
-        let val = unsafe { std::ptr::read(addr as *const u32) };
-        if val == SYSCALL_INSTR {
+        let val = unsafe { std::ptr::read(addr as *const arch::SyscallInstr) };
+        if val == arch::SYSCALL_INSTR {
             SYSCALL_OFFSET.set(off).unwrap();
             break;
         }
