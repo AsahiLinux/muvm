@@ -10,13 +10,14 @@ use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use tokio::net::UnixListener;
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt as _;
 
-pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<()> {
+pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<ExitCode> {
     let sock_fd = socket(
         AddressFamily::Vsock,
         SockType::Stream,
@@ -43,7 +44,7 @@ pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<
     let mut state_rx = WatchStream::new(state_rx);
 
     let mut server_died = false;
-    let mut command_exited = false;
+    let mut command_exit_code = None;
 
     loop {
         tokio::select! {
@@ -59,39 +60,40 @@ pub async fn server_main(command: PathBuf, command_args: Vec<String>) -> Result<
                     server_died = true;
                 }
             },
-            res = &mut command_status, if !command_exited => {
-                match res {
+            res = &mut command_status, if command_exit_code.is_none() => {
+                command_exit_code = Some(match res {
+                    Ok(status) if status.success() => ExitCode::SUCCESS,
                     Ok(status) => {
-                        if !status.success() {
-                            if let Some(code) = status.code() {
-                                eprintln!(
-                                    "{command:?} process exited with status code: {code}"
-                                );
-                            } else {
-                                eprintln!(
-                                    "{:?} process terminated by signal: {}",
-                                    command,
-                                    status
-                                        .signal()
-                                        .expect("either one of status code or signal should be set")
-                                );
-                            }
+                        if let Some(code) = status.code() {
+                            eprintln!(
+                                "{command:?} process exited with status code: {code}"
+                            );
+                            ExitCode::from(code as u8)
+                        } else {
+                            eprintln!(
+                                "{:?} process terminated by signal: {}",
+                                command,
+                                status
+                                    .signal()
+                                    .expect("either one of status code or signal should be set")
+                            );
+                            ExitCode::FAILURE
                         }
                     },
                     Err(err) => {
                         eprintln!(
                             "Failed to execute {command:?} as child process: {err}"
                         );
+                        ExitCode::FAILURE
                     },
-                }
-                command_exited = true;
+                })
             },
-            Some(state) = state_rx.next(), if command_exited => {
+            Some(state) = state_rx.next(), if command_exit_code.is_some() => {
                 if state.connection_idle() && state.child_processes() == 0 {
                     // Server is idle (not currently handling an accepted
                     // incoming connection) and no more child processes.
                     // We're done.
-                    return Ok(());
+                    return Ok(command_exit_code.unwrap());
                 }
                 println!(
                     "Waiting for {} other commands launched through this muvm server to exit...",

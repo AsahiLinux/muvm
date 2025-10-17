@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
 use std::panic::catch_unwind;
-use std::process::Command;
+use std::process::{Command, ExitCode};
 use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
@@ -23,12 +23,12 @@ use rustix::process::{getrlimit, setrlimit, Resource};
 
 const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     env_logger::init();
 
     if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
         start_x11bridge(val.parse()?);
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     let config_path = env::args()
