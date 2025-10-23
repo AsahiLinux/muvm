@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
 use std::panic::catch_unwind;
+use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 use std::{cmp, env, fs, thread};
 
@@ -26,6 +27,19 @@ const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
 fn main() -> Result<ExitCode> {
     env_logger::init();
+
+    let binary_path = env::args().next().context("arg0")?;
+    let bb = binary_path.split('/').next_back().context("arg0 split")?;
+    match bb {
+        "muvm-configure-network" => return configure_network(),
+        "muvm-remote" => {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut command_args = env::args().skip(1);
+            let command = command_args.next().context("command name")?;
+            return rt.block_on(server_main(PathBuf::from(command), command_args.collect()));
+        },
+        _ => { /* continue with all-in-one mode */ },
+    }
 
     if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
         start_x11bridge(val.parse()?);
