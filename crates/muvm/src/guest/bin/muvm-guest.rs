@@ -8,7 +8,8 @@ use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
-use muvm::guest::bridge::pipewire::start_pwbridge;
+use muvm::guest::bridge::common::{bridge_loop, bridge_loop_with_listenfd};
+use muvm::guest::bridge::pipewire::{pipewire_sock_path, PipeWireProtocolHandler};
 use muvm::guest::bridge::x11::start_x11bridge;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
@@ -32,6 +33,10 @@ fn main() -> Result<ExitCode> {
     let bb = binary_path.split('/').next_back().context("arg0 split")?;
     match bb {
         "muvm-configure-network" => return configure_network(),
+        "muvm-pwbridge" => {
+            bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
+            return Ok(());
+        },
         "muvm-remote" => {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let mut command_args = env::args().skip(1);
@@ -169,7 +174,7 @@ fn main() -> Result<ExitCode> {
     });
 
     thread::spawn(|| {
-        if catch_unwind(start_pwbridge).is_err() {
+        if catch_unwind(|| bridge_loop::<PipeWireProtocolHandler>(&pipewire_sock_path())).is_err() {
             eprintln!("pwbridge thread crashed, pipewire passthrough will no longer function");
         }
     });
