@@ -9,7 +9,6 @@ use nix::errno::Errno;
 use nix::sys::epoll::EpollFlags;
 use nix::sys::eventfd::{EfdFlags, EventFd};
 
-use crate::guest::bridge::common;
 use crate::guest::bridge::common::{
     Client, CrossDomainHeader, CrossDomainResource, MessageResourceFinalizer, ProtocolHandler,
     StreamRecvResult, StreamSendResult,
@@ -165,7 +164,7 @@ impl PipeWireHeader {
     }
 }
 
-struct PipeWireResourceFinalizer;
+pub struct PipeWireResourceFinalizer;
 
 impl MessageResourceFinalizer for PipeWireResourceFinalizer {
     type Handler = PipeWireProtocolHandler;
@@ -194,7 +193,7 @@ impl ClientNodeData {
     }
 }
 
-struct PipeWireProtocolHandler {
+pub struct PipeWireProtocolHandler {
     client_nodes: HashMap<u32, ClientNodeData>,
     guest_to_host_eventfds: HashMap<u64, CrossDomainEventFd>,
     host_to_guest_eventfds: HashMap<u32, CrossDomainEventFd>,
@@ -405,8 +404,6 @@ impl ProtocolHandler for PipeWireProtocolHandler {
     }
 }
 
-pub fn start_pwbridge() {
-    let sock_path = format!("{}/pipewire-0", env::var("XDG_RUNTIME_DIR").unwrap());
-
-    common::bridge_loop::<PipeWireProtocolHandler>(&sock_path)
+pub fn pipewire_sock_path() -> String {
+    format!("{}/pipewire-0", env::var("XDG_RUNTIME_DIR").unwrap())
 }
