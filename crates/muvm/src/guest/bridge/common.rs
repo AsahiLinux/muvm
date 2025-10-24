@@ -960,10 +960,24 @@ impl<'a, T: ProtocolHandler> SubPoll<'a, T> {
     }
 }
 
+pub fn bridge_loop_with_listenfd<T: ProtocolHandler>(fallback_sock_path: impl Fn() -> String) {
+    if let Some(listen_sock) = listenfd::ListenFd::from_env()
+        .take_unix_listener(0)
+        .unwrap()
+    {
+        bridge_loop_sock::<T>(listen_sock)
+    } else {
+        bridge_loop::<T>(&fallback_sock_path())
+    }
+}
+
 pub fn bridge_loop<T: ProtocolHandler>(sock_path: &str) {
-    let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
     _ = fs::remove_file(sock_path);
-    let listen_sock = UnixListener::bind(sock_path).unwrap();
+    bridge_loop_sock::<T>(UnixListener::bind(sock_path).unwrap());
+}
+
+pub fn bridge_loop_sock<T: ProtocolHandler>(listen_sock: UnixListener) {
+    let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
     epoll
         .add(
             &listen_sock,
