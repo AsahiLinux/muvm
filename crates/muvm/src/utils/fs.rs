@@ -1,5 +1,5 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -24,4 +24,11 @@ where
     }
 
     Ok(None)
+}
+
+pub fn mkdir_mode<P: AsRef<Path>>(path: P, mode: u32) -> Result<()> {
+    fs::DirBuilder::new()
+        .mode(mode)
+        .create(&path)
+        .with_context(|| format!("Failed to create {:?}", path.as_ref()))
 }
