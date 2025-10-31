@@ -1,9 +1,10 @@
 use std::env;
-use std::fs::{self, Permissions};
-use std::os::unix::fs::{chown, PermissionsExt as _};
+use std::fs;
+use std::os::unix::fs::chown;
 use std::path::{Path, PathBuf};
 
 use crate::guest::hidpipe::UINPUT_PATH;
+use crate::utils::fs::mkdir_mode;
 use anyhow::{anyhow, Context, Result};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{fork, setresgid, setresuid, ForkResult, Gid, Uid, User};
@@ -11,15 +12,17 @@ use nix::unistd::{fork, setresgid, setresuid, ForkResult, Gid, Uid, User};
 pub fn setup_user(uid: Uid, gid: Gid) -> Result<PathBuf> {
     setup_directories(uid, gid)?;
 
+    let path = PathBuf::from(format!("/run/user/{uid}"));
+
+    mkdir_mode(path.parent().unwrap(), 0o755)?;
+    mkdir_mode(&path, 0o700)?;
+
+    chown(&path, Some(uid.into()), Some(gid.into()))
+        .with_context(|| format!("Failed to chown {path:?}"))?;
+
     setresgid(gid, gid, Gid::from(0)).context("Failed to setgid")?;
     setresuid(uid, uid, Uid::from(0)).context("Failed to setuid")?;
 
-    let path = tempfile::Builder::new()
-        .prefix(&format!("muvm-run-{uid}-"))
-        .permissions(Permissions::from_mode(0o700))
-        .tempdir()
-        .context("Failed to create temp dir for `XDG_RUNTIME_DIR`")?
-        .into_path();
     // SAFETY: Safe if and only if `muvm-guest` program is not multithreaded.
     // See https://doc.rust-lang.org/std/env/fn.set_var.html#safety
     env::set_var("XDG_RUNTIME_DIR", &path);
