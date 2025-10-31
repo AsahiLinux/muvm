@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
 use std::panic::catch_unwind;
-use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 use std::{cmp, env, fs, thread};
 
@@ -25,34 +24,7 @@ use rustix::process::{getrlimit, setrlimit, Resource};
 
 const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
-fn main() -> Result<ExitCode> {
-    env_logger::init();
-
-    let binary_path = env::args().next().context("arg0")?;
-    let bb = binary_path.split('/').next_back().context("arg0 split")?;
-    match bb {
-        "muvm-configure-network" => return configure_network(),
-        "muvm-pwbridge" => {
-            bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
-            return Ok(());
-        },
-        "muvm-remote" => {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let mut command_args = env::args().skip(1);
-            let command = command_args.next().context("command name")?;
-            return rt.block_on(server_main(PathBuf::from(command), command_args.collect()));
-        },
-        _ => { /* continue with all-in-one mode */ },
-    }
-
-    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
-        start_x11bridge(val.parse()?);
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    let config_path = env::args()
-        .nth(1)
-        .context("expected configuration file path")?;
+fn parse_config(config_path: String) -> Result<GuestConfiguration> {
     let mut config_file = File::open(&config_path)?;
     let mut config_buf = Vec::new();
     config_file.read_to_end(&mut config_buf)?;
@@ -65,7 +37,42 @@ fn main() -> Result<ExitCode> {
     }
     // SAFETY: We are single-threaded at this point
     env::remove_var("KRUN_WORKDIR");
-    let options = serde_json::from_slice::<GuestConfiguration>(&config_buf)?;
+    Ok(serde_json::from_slice::<GuestConfiguration>(&config_buf)?)
+}
+
+fn main() -> Result<ExitCode> {
+    env_logger::init();
+
+    let binary_path = env::args().next().context("arg0")?;
+    let bb = binary_path.split('/').next_back().context("arg0 split")?;
+    match bb {
+        "muvm-configure-network" => return configure_network().map(|()| ExitCode::SUCCESS),
+        "muvm-pwbridge" => {
+            bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
+            return Ok(ExitCode::SUCCESS);
+        },
+        "muvm-remote" => {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            return rt.block_on(server_main(
+                options.command.command,
+                options.command.command_args,
+            ));
+        },
+        _ => { /* continue with all-in-one mode */ },
+    }
+
+    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
+        start_x11bridge(val.parse()?);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let config_path = env::args()
+        .nth(1)
+        .context("expected configuration file path")?;
+    let options = parse_config(config_path)?;
 
     {
         const ESYNC_RLIMIT_NOFILE: u64 = 524288;
