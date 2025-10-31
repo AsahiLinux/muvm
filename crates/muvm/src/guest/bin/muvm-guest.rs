@@ -25,6 +25,22 @@ use rustix::process::{getrlimit, setrlimit, Resource};
 
 const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
+fn parse_config(config_path: String) -> Result<GuestConfiguration> {
+    let mut config_file = File::open(&config_path)?;
+    let mut config_buf = Vec::new();
+    config_file.read_to_end(&mut config_buf)?;
+    fs::remove_file(config_path).context("Unable to delete temporary muvm configuration file")?;
+    if let Ok(krun_config_path) = env::var(KRUN_CONFIG) {
+        fs::remove_file(krun_config_path)
+            .context("Unable to delete temporary krun configuration file")?;
+        // SAFETY: We are single-threaded at this point
+        env::remove_var(KRUN_CONFIG);
+    }
+    // SAFETY: We are single-threaded at this point
+    env::remove_var("KRUN_WORKDIR");
+    Ok(serde_json::from_slice::<GuestConfiguration>(&config_buf)?)
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -38,9 +54,13 @@ fn main() -> Result<()> {
         },
         "muvm-remote" => {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let mut command_args = env::args().skip(1);
-            let command = command_args.next().context("command name")?;
-            return rt.block_on(server_main(PathBuf::from(command), command_args.collect()));
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            return rt.block_on(server_main(
+                options.command.command,
+                options.command.command_args,
+            ));
         },
         _ => { /* continue with all-in-one mode */ },
     }
@@ -53,19 +73,7 @@ fn main() -> Result<()> {
     let config_path = env::args()
         .nth(1)
         .context("expected configuration file path")?;
-    let mut config_file = File::open(&config_path)?;
-    let mut config_buf = Vec::new();
-    config_file.read_to_end(&mut config_buf)?;
-    fs::remove_file(config_path).context("Unable to delete temporary muvm configuration file")?;
-    if let Ok(krun_config_path) = env::var(KRUN_CONFIG) {
-        fs::remove_file(krun_config_path)
-            .context("Unable to delete temporary krun configuration file")?;
-        // SAFETY: We are single-threaded at this point
-        env::remove_var(KRUN_CONFIG);
-    }
-    // SAFETY: We are single-threaded at this point
-    env::remove_var("KRUN_WORKDIR");
-    let options = serde_json::from_slice::<GuestConfiguration>(&config_buf)?;
+    let options = parse_config(config_path)?;
 
     {
         const ESYNC_RLIMIT_NOFILE: u64 = 524288;
