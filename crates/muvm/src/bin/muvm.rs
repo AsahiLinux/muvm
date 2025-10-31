@@ -478,9 +478,19 @@ fn main() -> Result<ExitCode> {
 
     let krun_config_env = CString::new(format!("KRUN_CONFIG={}", config_file.path().display()))
         .context("Failed to process config_file var as it contains NUL character")?;
+    #[allow(unused_assignments)] // wat?
+    let mut muvm_config_env = None; // keep in this scope
     let mut env: Vec<*const c_char> = vec![krun_config_env.as_ptr()];
     if custom_init {
         env.push(c"KRUN_INIT_PID1=1".as_ptr());
+        muvm_config_env = Some(
+            CString::new(format!(
+                "MUVM_REMOTE_CONFIG={}",
+                muvm_config_file.path().display()
+            ))
+            .context("Failed to process internal config path as it contains NUL character")?,
+        );
+        env.push(muvm_config_env.as_ref().unwrap().as_ptr());
     }
     env.push(std::ptr::null());
 
