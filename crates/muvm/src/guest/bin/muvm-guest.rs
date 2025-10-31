@@ -2,12 +2,14 @@ use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
 use std::panic::catch_unwind;
+use std::path::PathBuf;
 use std::process::Command;
 use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
-use muvm::guest::bridge::pipewire::start_pwbridge;
+use muvm::guest::bridge::common::{bridge_loop, bridge_loop_with_listenfd};
+use muvm::guest::bridge::pipewire::{pipewire_sock_path, PipeWireProtocolHandler};
 use muvm::guest::bridge::x11::start_x11bridge;
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
@@ -23,17 +25,7 @@ use rustix::process::{getrlimit, setrlimit, Resource};
 
 const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
-fn main() -> Result<()> {
-    env_logger::init();
-
-    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
-        start_x11bridge(val.parse()?);
-        return Ok(());
-    }
-
-    let config_path = env::args()
-        .nth(1)
-        .context("expected configuration file path")?;
+fn parse_config(config_path: String) -> Result<GuestConfiguration> {
     let mut config_file = File::open(&config_path)?;
     let mut config_buf = Vec::new();
     config_file.read_to_end(&mut config_buf)?;
@@ -46,7 +38,42 @@ fn main() -> Result<()> {
     }
     // SAFETY: We are single-threaded at this point
     env::remove_var("KRUN_WORKDIR");
-    let options = serde_json::from_slice::<GuestConfiguration>(&config_buf)?;
+    Ok(serde_json::from_slice::<GuestConfiguration>(&config_buf)?)
+}
+
+fn main() -> Result<()> {
+    env_logger::init();
+
+    let binary_path = env::args().next().context("arg0")?;
+    let bb = binary_path.split('/').next_back().context("arg0 split")?;
+    match bb {
+        "muvm-configure-network" => return configure_network(),
+        "muvm-pwbridge" => {
+            bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
+            return Ok(());
+        },
+        "muvm-remote" => {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            return rt.block_on(server_main(
+                options.command.command,
+                options.command.command_args,
+            ));
+        },
+        _ => { /* continue with all-in-one mode */ },
+    }
+
+    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
+        start_x11bridge(val.parse()?);
+        return Ok(());
+    }
+
+    let config_path = env::args()
+        .nth(1)
+        .context("expected configuration file path")?;
+    let options = parse_config(config_path)?;
 
     {
         const ESYNC_RLIMIT_NOFILE: u64 = 524288;
@@ -139,7 +166,7 @@ fn main() -> Result<()> {
     });
 
     thread::spawn(|| {
-        if catch_unwind(start_pwbridge).is_err() {
+        if catch_unwind(|| bridge_loop::<PipeWireProtocolHandler>(&pipewire_sock_path())).is_err() {
             eprintln!("pwbridge thread crashed, pipewire passthrough will no longer function");
         }
     });
