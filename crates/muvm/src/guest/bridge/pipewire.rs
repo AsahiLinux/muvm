@@ -268,9 +268,9 @@ impl ProtocolHandler for PipeWireProtocolHandler {
                     fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc)?);
                 } else if hdr.opcode == PW_OPC_CLIENT_NODE_TRANSPORT {
                     let rsc1 = resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_host_to_guest_eventfd(this, hdr.id, rsc1)?);
+                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc1)?);
                     let rsc2 = resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc2)?);
+                    fds.push(Self::create_host_to_guest_eventfd(this, hdr.id, rsc2)?);
                 } else {
                     unimplemented!()
                 }
