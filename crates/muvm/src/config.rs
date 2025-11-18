@@ -1,23 +1,16 @@
 use std::{
-    env::{self, VarError},
-    io,
+    env, io,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::utils::env::get_var_if_exists;
+
 #[derive(Deserialize, Serialize, Default)]
 pub struct Configuration {
     pub execute_pre: Option<PathBuf>,
-}
-
-fn get_var_if_exists(name: &str) -> Option<Result<String>> {
-    match env::var(name) {
-        Ok(val) => Some(Ok(val)),
-        Err(VarError::NotPresent) => None,
-        Err(e) => Some(Err(e.into())),
-    }
 }
 
 fn get_user_config_path() -> Result<PathBuf> {

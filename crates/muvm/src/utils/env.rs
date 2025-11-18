@@ -32,3 +32,11 @@ where
 
     Ok(None)
 }
+
+pub fn get_var_if_exists(name: &str) -> Option<Result<String>> {
+    match env::var(name) {
+        Ok(val) => Some(Ok(val)),
+        Err(env::VarError::NotPresent) => None,
+        Err(e) => Some(Err(e.into())),
+    }
+}
