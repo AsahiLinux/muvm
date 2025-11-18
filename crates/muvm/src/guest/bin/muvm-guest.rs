@@ -17,6 +17,7 @@ use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use muvm::utils::env::get_var_if_exists;
 use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
@@ -82,7 +83,8 @@ fn main() -> Result<ExitCode> {
         None => "/usr/lib/systemd/systemd-udevd",
     };
     Command::new(
-        env::var("MUVM_UDEVD_PATH").unwrap_or_else(|_| DEFAULT_UDEVD_PATH.parse().unwrap()),
+        get_var_if_exists("MUVM_UDEVD_PATH")
+            .unwrap_or_else(|| Ok(DEFAULT_UDEVD_PATH.to_owned()))?,
     )
     .spawn()
     .context("Failed to execute `systemd-udevd` as a child process")?;
