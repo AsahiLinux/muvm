@@ -10,7 +10,7 @@ use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
 use muvm::guest::bridge::common::{bridge_loop, bridge_loop_with_listenfd};
 use muvm::guest::bridge::pipewire::{pipewire_sock_path, PipeWireProtocolHandler};
-use muvm::guest::bridge::x11::start_x11bridge;
+use muvm::guest::bridge::x11::{start_x11bridge, X11ProtocolHandler};
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
@@ -36,6 +36,10 @@ fn main() -> Result<ExitCode> {
         "muvm-pwbridge" => {
             bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
             return Ok(());
+        },
+        "muvm-x11bridge" => {
+            bridge_loop_with_listenfd::<X11ProtocolHandler>(|| "/tmp/.X11-unix/X1".to_owned());
+            return Ok(ExitCode::SUCCESS);
         },
         "muvm-remote" => {
             let rt = tokio::runtime::Runtime::new().unwrap();
