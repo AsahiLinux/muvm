@@ -155,7 +155,7 @@ struct CrossDomainFutexDestroy {
     pad: u32,
 }
 
-enum X11ResourceFinalizer {
+pub enum X11ResourceFinalizer {
     Gem(GemHandleFinalizer),
     Futex(u32),
 }
@@ -186,7 +186,7 @@ impl MessageResourceFinalizer for X11ResourceFinalizer {
     }
 }
 
-struct X11ProtocolHandler {
+pub struct X11ProtocolHandler {
     // futex_watchers gets dropped first
     futex_watchers: HashMap<u32, FutexWatcherThread>,
     got_first_req: bool,
