@@ -21,6 +21,7 @@ const CROSS_DOMAIN_CMD_READ: u8 = 6;
 const CROSS_DOMAIN_CMD_WRITE: u8 = 7;
 
 const SPA_TYPE_STRUCT: u32 = 14;
+const SPA_TYPE_FD: u32 = 18;
 
 const PW_OPC_CORE_CREATE_OBJECT: u8 = 6;
 const PW_OPC_CORE_ADD_MEM: u8 = 6;
@@ -51,6 +52,10 @@ fn align_up(v: u32, a: u32) -> u32 {
 
 fn read_u32(data: &[u8], at: usize) -> u32 {
     u32::from_ne_bytes(data[at..(at + 4)].try_into().unwrap())
+}
+
+fn read_u64(data: &[u8], at: usize) -> u64 {
+    u64::from_ne_bytes(data[at..(at + 8)].try_into().unwrap())
 }
 
 #[derive(Debug)]
@@ -112,6 +117,27 @@ impl<'a> ClientUpdateProperties<'a> {
             props.push((key, value));
         }
         ClientUpdateProperties { props }
+    }
+}
+
+#[derive(Debug)]
+struct ClientNodeTransport {
+    readfd: u64,
+    writefd: u64,
+    // .. don't care about the remaining ones
+}
+
+impl ClientNodeTransport {
+    fn new(data: &[u8]) -> Self {
+        let ty = read_u32(data, 4);
+        assert_eq!(ty, SPA_TYPE_STRUCT);
+        let readfd_ty = read_u32(data, 12);
+        assert_eq!(readfd_ty, SPA_TYPE_FD);
+        let readfd = read_u64(data, 16);
+        let writefd_ty = read_u32(data, 28);
+        assert_eq!(writefd_ty, SPA_TYPE_FD);
+        let writefd = read_u64(data, 32);
+        ClientNodeTransport { readfd, writefd }
     }
 }
 
@@ -267,10 +293,21 @@ impl ProtocolHandler for PipeWireProtocolHandler {
                     let rsc = resources.pop_front().ok_or(Errno::EIO)?;
                     fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc)?);
                 } else if hdr.opcode == PW_OPC_CLIENT_NODE_TRANSPORT {
-                    let rsc1 = resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_host_to_guest_eventfd(this, hdr.id, rsc1)?);
-                    let rsc2 = resources.pop_front().ok_or(Errno::EIO)?;
-                    fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc2)?);
+                    let msg = ClientNodeTransport::new(&data[PipeWireHeader::SIZE..]);
+                    // We need to take elements out by index without shifting the indices.
+                    let mut resources: Vec<_> = resources.drain(..hdr.num_fd).map(Some).collect();
+                    let writefd_rsc = resources.get_mut(msg.writefd as usize).ok_or(Errno::EIO)?;
+                    fds.push(Self::create_guest_to_host_eventfd(
+                        this,
+                        hdr.id,
+                        writefd_rsc.take().ok_or(Errno::EIO)?,
+                    )?);
+                    let readfd_rsc = resources.get_mut(msg.readfd as usize).ok_or(Errno::EIO)?;
+                    fds.push(Self::create_host_to_guest_eventfd(
+                        this,
+                        hdr.id,
+                        readfd_rsc.take().ok_or(Errno::EIO)?,
+                    )?);
                 } else {
                     unimplemented!()
                 }
