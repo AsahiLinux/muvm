@@ -41,6 +41,14 @@ fn main() -> Result<ExitCode> {
             bridge_loop_with_listenfd::<X11ProtocolHandler>(|| "/tmp/.X11-unix/X1".to_owned());
             return Ok(ExitCode::SUCCESS);
         },
+        "muvm-hidpipe" => {
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            let uid = options.uid;
+            start_hidpipe(uid);
+            return Ok(ExitCode::SUCCESS);
+        },
         "muvm-remote" => {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let mut command_args = env::args().skip(1);
