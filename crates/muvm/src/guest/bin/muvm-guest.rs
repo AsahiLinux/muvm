@@ -7,8 +7,9 @@ use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
 use muvm::guest::box64::setup_box;
-use muvm::guest::bridge::pipewire::start_pwbridge;
-use muvm::guest::bridge::x11::start_x11bridge;
+use muvm::guest::bridge::common::{bridge_loop, bridge_loop_with_listenfd};
+use muvm::guest::bridge::pipewire::{pipewire_sock_path, PipeWireProtocolHandler};
+use muvm::guest::bridge::x11::{start_x11bridge, X11ProtocolHandler};
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
@@ -17,23 +18,14 @@ use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use muvm::utils::env::get_var_if_exists;
 use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
 const KRUN_CONFIG: &str = "KRUN_CONFIG";
 
-fn main() -> Result<ExitCode> {
-    env_logger::init();
-
-    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
-        start_x11bridge(val.parse()?);
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    let config_path = env::args()
-        .nth(1)
-        .context("expected configuration file path")?;
+fn parse_config(config_path: String) -> Result<GuestConfiguration> {
     let mut config_file = File::open(&config_path)?;
     let mut config_buf = Vec::new();
     config_file.read_to_end(&mut config_buf)?;
@@ -46,7 +38,54 @@ fn main() -> Result<ExitCode> {
     }
     // SAFETY: We are single-threaded at this point
     env::remove_var("KRUN_WORKDIR");
-    let options = serde_json::from_slice::<GuestConfiguration>(&config_buf)?;
+    Ok(serde_json::from_slice::<GuestConfiguration>(&config_buf)?)
+}
+
+fn main() -> Result<ExitCode> {
+    env_logger::init();
+
+    let binary_path = env::args().next().context("arg0")?;
+    let bb = binary_path.split('/').next_back().context("arg0 split")?;
+    match bb {
+        "muvm-configure-network" => return configure_network().map(|()| ExitCode::SUCCESS),
+        "muvm-pwbridge" => {
+            bridge_loop_with_listenfd::<PipeWireProtocolHandler>(pipewire_sock_path);
+            return Ok(ExitCode::SUCCESS);
+        },
+        "muvm-x11bridge" => {
+            bridge_loop_with_listenfd::<X11ProtocolHandler>(|| "/tmp/.X11-unix/X1".to_owned());
+            return Ok(ExitCode::SUCCESS);
+        },
+        "muvm-hidpipe" => {
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            let uid = options.uid;
+            start_hidpipe(uid);
+            return Ok(ExitCode::SUCCESS);
+        },
+        "muvm-remote" => {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let config_path =
+                env::var("MUVM_REMOTE_CONFIG").context("expected MUVM_REMOTE_CONFIG to be set")?;
+            let options = parse_config(config_path)?;
+            return rt.block_on(server_main(
+                options.command.command,
+                options.command.command_args,
+            ));
+        },
+        _ => { /* continue with all-in-one mode */ },
+    }
+
+    if let Ok(val) = env::var("__X11BRIDGE_DEBUG") {
+        start_x11bridge(val.parse()?);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let config_path = env::args()
+        .nth(1)
+        .context("expected configuration file path")?;
+    let options = parse_config(config_path)?;
 
     {
         const ESYNC_RLIMIT_NOFILE: u64 = 524288;
@@ -77,27 +116,42 @@ fn main() -> Result<ExitCode> {
     rustix::stdio::dup2_stdout(console.as_fd())?;
     rustix::stdio::dup2_stderr(console.as_fd())?;
 
-    Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
+    const DEFAULT_UDEVD_PATH: &str = match std::option_env!("MUVM_UDEVD_PATH") {
+        Some(path) => path,
+        None => "/usr/lib/systemd/systemd-udevd",
+    };
+    Command::new(
+        get_var_if_exists("MUVM_UDEVD_PATH")
+            .unwrap_or_else(|| Ok(DEFAULT_UDEVD_PATH.to_owned()))?,
+    )
+    .spawn()
+    .context("Failed to execute `systemd-udevd` as a child process")?;
+    // SAFETY: We are single-threaded at this point
+    env::remove_var("MUVM_UDEVD_PATH");
 
     if let Some(emulator) = options.emulator {
         match emulator {
             Emulator::Box => setup_box()?,
             Emulator::Fex => setup_fex()?,
         };
-    } else if let Err(err) = setup_fex() {
-        eprintln!("Error setting up FEX in binfmt_misc: {err}");
-        eprintln!("Failed to find or configure FEX, falling back to Box");
+    } else {
+        #[cfg(target_arch = "aarch64")]
+        if let Err(err) = setup_fex() {
+            eprintln!("Error setting up FEX in binfmt_misc: {err}");
+            eprintln!("Failed to find or configure FEX, falling back to Box64");
 
-        if let Err(err) = setup_box() {
-            eprintln!("Error setting up Box in binfmt_misc: {err}");
-            eprintln!("No emulators were configured, x86 emulation may not work");
+            if let Err(err) = setup_box() {
+                eprintln!("Error setting up Box64 in binfmt_misc: {err}");
+                eprintln!("No emulators were configured, x86 emulation may not work");
+            }
         }
     }
 
     for init_command in options.init_commands {
         let code = Command::new(&init_command)
             .current_dir(&options.cwd)
-            .spawn()?
+            .spawn()
+            .with_context(|| format!("Failed to execute init command {init_command:?}"))?
             .wait()?;
         if !code.success() {
             return Err(anyhow!("Executing `{}` failed", init_command.display()));
@@ -139,7 +193,7 @@ fn main() -> Result<ExitCode> {
     });
 
     thread::spawn(|| {
-        if catch_unwind(start_pwbridge).is_err() {
+        if catch_unwind(|| bridge_loop::<PipeWireProtocolHandler>(&pipewire_sock_path())).is_err() {
             eprintln!("pwbridge thread crashed, pipewire passthrough will no longer function");
         }
     });
