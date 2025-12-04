@@ -17,6 +17,7 @@ use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
+use muvm::utils::env::get_var_if_exists;
 use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
@@ -77,27 +78,42 @@ fn main() -> Result<ExitCode> {
     rustix::stdio::dup2_stdout(console.as_fd())?;
     rustix::stdio::dup2_stderr(console.as_fd())?;
 
-    Command::new("/usr/lib/systemd/systemd-udevd").spawn()?;
+    const DEFAULT_UDEVD_PATH: &str = match std::option_env!("MUVM_UDEVD_PATH") {
+        Some(path) => path,
+        None => "/usr/lib/systemd/systemd-udevd",
+    };
+    Command::new(
+        get_var_if_exists("MUVM_UDEVD_PATH")
+            .unwrap_or_else(|| Ok(DEFAULT_UDEVD_PATH.to_owned()))?,
+    )
+    .spawn()
+    .context("Failed to execute `systemd-udevd` as a child process")?;
+    // SAFETY: We are single-threaded at this point
+    env::remove_var("MUVM_UDEVD_PATH");
 
     if let Some(emulator) = options.emulator {
         match emulator {
             Emulator::Box => setup_box()?,
             Emulator::Fex => setup_fex()?,
         };
-    } else if let Err(err) = setup_fex() {
-        eprintln!("Error setting up FEX in binfmt_misc: {err}");
-        eprintln!("Failed to find or configure FEX, falling back to Box");
+    } else {
+        #[cfg(target_arch = "aarch64")]
+        if let Err(err) = setup_fex() {
+            eprintln!("Error setting up FEX in binfmt_misc: {err}");
+            eprintln!("Failed to find or configure FEX, falling back to Box64");
 
-        if let Err(err) = setup_box() {
-            eprintln!("Error setting up Box in binfmt_misc: {err}");
-            eprintln!("No emulators were configured, x86 emulation may not work");
+            if let Err(err) = setup_box() {
+                eprintln!("Error setting up Box64 in binfmt_misc: {err}");
+                eprintln!("No emulators were configured, x86 emulation may not work");
+            }
         }
     }
 
     for init_command in options.init_commands {
         let code = Command::new(&init_command)
             .current_dir(&options.cwd)
-            .spawn()?
+            .spawn()
+            .with_context(|| format!("Failed to execute init command {init_command:?}"))?
             .wait()?;
         if !code.success() {
             return Err(anyhow!("Executing `{}` failed", init_command.display()));
