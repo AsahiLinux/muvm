@@ -373,11 +373,8 @@ fn run_io_guest(
     let mut vsock = StdUnixStream::from(vsock_fd);
     let epoll = Epoll::new(EpollCreateFlags::empty())?;
     epoll.add(&stdout, EpollEvent::new(EpollFlags::EPOLLIN, 1))?;
-    if stderr.is_some() {
-        epoll.add(
-            stderr.as_ref().unwrap(),
-            EpollEvent::new(EpollFlags::EPOLLIN, 2),
-        )?;
+    if let Some(ref stderr) = stderr {
+        epoll.add(stderr, EpollEvent::new(EpollFlags::EPOLLIN, 2))?;
     }
     epoll.add(&vsock, EpollEvent::new(EpollFlags::EPOLLIN, 3))?;
     epoll.add(&stop_pipe, EpollEvent::new(EpollFlags::EPOLLIN, 4))?;
