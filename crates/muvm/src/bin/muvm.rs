@@ -429,13 +429,21 @@ fn main() -> Result<ExitCode> {
         .to_str()
         .context("Temporary directory path contains invalid UTF-8")?
         .to_owned();
-    let muvm_guest_args = vec![
-        muvm_guest_path
-            .to_str()
-            .context("Failed to process `muvm-guest` path as it contains invalid UTF-8")?
-            .to_owned(),
-        muvm_config_path,
-    ];
+    let custom_init = options.custom_init_cmdline.is_some();
+    let muvm_guest_args = if let Some(cmdline) = options.custom_init_cmdline {
+        cmdline
+            .split_whitespace()
+            .map(|a| a.to_owned())
+            .collect::<Vec<String>>()
+    } else {
+        vec![
+            muvm_guest_path
+                .to_str()
+                .context("Failed to process `muvm-guest` path as it contains invalid UTF-8")?
+                .to_owned(),
+            muvm_config_path,
+        ]
+    };
 
     // And forward XAUTHORITY. This will be modified to fix the
     // display name in muvm-guest.
@@ -470,7 +478,21 @@ fn main() -> Result<ExitCode> {
 
     let krun_config_env = CString::new(format!("KRUN_CONFIG={}", config_file.path().display()))
         .context("Failed to process config_file var as it contains NUL character")?;
-    let env: Vec<*const c_char> = vec![krun_config_env.as_ptr(), std::ptr::null()];
+    #[allow(unused_assignments)] // wat?
+    let mut muvm_config_env = None; // keep in this scope
+    let mut env: Vec<*const c_char> = vec![krun_config_env.as_ptr()];
+    if custom_init {
+        env.push(c"KRUN_INIT_PID1=1".as_ptr());
+        muvm_config_env = Some(
+            CString::new(format!(
+                "MUVM_REMOTE_CONFIG={}",
+                muvm_config_file.path().display()
+            ))
+            .context("Failed to process internal config path as it contains NUL character")?,
+        );
+        env.push(muvm_config_env.as_ref().unwrap().as_ptr());
+    }
+    env.push(std::ptr::null());
 
     {
         // Sets environment variables to be configured in the context of the executable.

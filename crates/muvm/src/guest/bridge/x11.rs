@@ -4,7 +4,6 @@ use std::ffi::{c_long, c_void, CString};
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{IoSlice, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
-use std::process::exit;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -156,7 +155,7 @@ struct CrossDomainFutexDestroy {
     pad: u32,
 }
 
-enum X11ResourceFinalizer {
+pub enum X11ResourceFinalizer {
     Gem(GemHandleFinalizer),
     Futex(u32),
 }
@@ -187,7 +186,7 @@ impl MessageResourceFinalizer for X11ResourceFinalizer {
     }
 }
 
-struct X11ProtocolHandler {
+pub struct X11ProtocolHandler {
     // futex_watchers gets dropped first
     futex_watchers: HashMap<u32, FutexWatcherThread>,
     got_first_req: bool,
@@ -704,7 +703,7 @@ impl RemoteCaller {
 
         // Find the vDSO and the address of a syscall instruction within it
         let (vdso_start, _) = find_vdso(Some(pid))?;
-        let syscall_addr = vdso_start + SYSCALL_OFFSET.get().unwrap();
+        let syscall_addr = vdso_start + SYSCALL_OFFSET.get_or_init(find_syscall_offset);
 
         let mut regs = old_regs;
         arch::set_syscall_addr(&mut regs, syscall_addr);
@@ -847,9 +846,7 @@ fn find_vdso(pid: Option<Pid>) -> Result<(usize, usize), Errno> {
     Err(Errno::EINVAL)
 }
 
-pub fn start_x11bridge(display: u32) {
-    let sock_path = format!("/tmp/.X11-unix/X{display}");
-
+fn find_syscall_offset() -> usize {
     // Look for a syscall instruction in the vDSO. We assume all processes map
     // the same vDSO (which should be true if they are running under the same
     // kernel!)
@@ -858,14 +855,13 @@ pub fn start_x11bridge(display: u32) {
         let addr = vdso_start + off;
         let val = unsafe { std::ptr::read(addr as *const arch::SyscallInstr) };
         if val == arch::SYSCALL_INSTR {
-            SYSCALL_OFFSET.set(off).unwrap();
-            break;
+            return off;
         }
     }
-    if SYSCALL_OFFSET.get().is_none() {
-        eprintln!("Failed to find syscall instruction in vDSO");
-        exit(1);
-    }
+    panic!("Failed to find syscall instruction in vDSO");
+}
 
+pub fn start_x11bridge(display: u32) {
+    let sock_path = format!("/tmp/.X11-unix/X{display}");
     common::bridge_loop::<X11ProtocolHandler>(&sock_path)
 }

@@ -47,6 +47,7 @@ pub struct Options {
     pub emulator: Option<Emulator>,
     pub init_commands: Vec<PathBuf>,
     pub user_init_commands: Vec<PathBuf>,
+    pub custom_init_cmdline: Option<String>,
     pub command: PathBuf,
     pub command_args: Vec<String>,
 }
@@ -179,6 +180,13 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument("COMMAND")
         .many();
+    let custom_init_cmdline = long("custom-init-cmdline")
+        .help(
+            "Command and arguments to run as PID 1, replacing muvm's own init.
+            (Warning: this will break many muvm features, unless your init reimplements them.)",
+        )
+        .argument("CMDLINE")
+        .optional();
     let command = positional("COMMAND").help("the command you want to execute in the vm");
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
         (!["--help", "-h"].contains(&&*arg)).then_some(arg)
@@ -202,6 +210,7 @@ pub fn options() -> OptionParser<Options> {
         emulator,
         init_commands,
         user_init_commands,
+        custom_init_cmdline,
         // positionals
         command,
         command_args,
