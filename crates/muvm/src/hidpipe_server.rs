@@ -257,12 +257,8 @@ where
             return true;
         }
         let res = f(v);
-        if res.is_err() {
-            error!(
-                "Client {} disconnected with error: {:?}",
-                *k,
-                res.unwrap_err()
-            );
+        if let Err(res) = res {
+            error!("Client {} disconnected with error: {:?}", *k, res,);
             epoll.delete(&v.socket).unwrap();
             false
         } else {
@@ -277,12 +273,8 @@ where
 {
     let client = clients.get_mut(&fd).unwrap();
     let res = f(client);
-    if res.is_err() {
-        error!(
-            "Client {} disconnected with error: {:?}",
-            fd,
-            res.unwrap_err()
-        );
+    if let Err(res) = res {
+        error!("Client {} disconnected with error: {:?}", fd, res,);
         epoll.delete(&client.socket).unwrap();
         clients.remove(&fd);
     }
@@ -400,11 +392,8 @@ fn run(mut evdevs: EvdevContainer, listen_sock: UnixListener, epoll: Epoll) {
             }
         } else if fd == listen_sock.as_raw_fd() as u64 {
             let res = listen_sock.accept();
-            if res.is_err() {
-                error!(
-                    "Failed to accept a connection, error: {:?}",
-                    res.unwrap_err()
-                );
+            if let Err(res) = res {
+                error!("Failed to accept a connection, error: {:?}", res,);
                 continue;
             }
             let stream = res.unwrap().0;

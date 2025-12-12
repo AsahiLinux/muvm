@@ -982,11 +982,8 @@ pub fn bridge_loop<T: ProtocolHandler>(sock_path: &str) {
             let events = evt.events();
             if fd == listen_sock.as_raw_fd() as u64 {
                 let res = listen_sock.accept();
-                if res.is_err() {
-                    eprintln!(
-                        "Failed to accept a connection, error: {:?}",
-                        res.unwrap_err()
-                    );
+                if let Err(res) = res {
+                    eprintln!("Failed to accept a connection, error: {res:?}");
                     continue;
                 }
                 let stream = res.unwrap().0;
