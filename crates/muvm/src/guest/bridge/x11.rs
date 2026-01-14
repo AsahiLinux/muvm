@@ -304,8 +304,18 @@ impl ProtocolHandler for X11ProtocolHandler {
             req_len = u32::from_ne_bytes(buf[4..8].try_into().unwrap()) as usize * 4;
         }
         if buf[0] == X11_OPCODE_QUERY_EXTENSION {
+            if buf.len() < 8 {
+                return Ok(StreamSendResult::WantMore);
+            }
+
             let namelen = u16::from_ne_bytes(buf[4..6].try_into().unwrap()) as usize;
-            let name = String::from_utf8_lossy(&buf[8..(8 + namelen)]);
+            let end = 8 + namelen;
+
+            if buf.len() < end {
+                return Ok(StreamSendResult::WantMore);
+            }
+
+            let name = String::from_utf8_lossy(&buf[8..end]);
             if name == "DRI3" {
                 this.protocol_handler.dri3_qe_resp_seq = Some(this.protocol_handler.seq_no);
             } else if name == "SYNC" {

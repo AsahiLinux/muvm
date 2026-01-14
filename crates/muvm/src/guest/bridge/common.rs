@@ -595,13 +595,13 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
             identifier_sizes: [0; CROSS_DOMAIN_MAX_IDENTIFIERS],
             data: [0u8; CROSS_DOMAIN_SR_TAIL_SIZE],
         };
+        let head_len = self.request_head.len();
         let recv_buf = if self.request_tail > 0 {
             assert!(self.request_head.is_empty());
             assert!(self.request_fds.is_empty());
             let len = self.request_tail.min(ring_msg.data.len());
             &mut ring_msg.data[..len]
         } else {
-            let head_len = self.request_head.len();
             ring_msg.data[..head_len].copy_from_slice(&self.request_head);
             self.request_head.clear();
             &mut ring_msg.data[head_len..]
@@ -629,35 +629,46 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
         } else {
             return Ok(true);
         };
-        let buf = &mut ring_msg.data[..len];
+        let buf_len = head_len + len;
+        let buf = &mut ring_msg.data[..buf_len];
+
         self.debug_loop.loop_local(buf);
         let mut resources = Vec::new();
         let mut finalizers = Vec::new();
+
+        let mut ptr = 0;
+        // Drain outstanding tail bytes first, then parse any remaining data.
         if self.request_tail > 0 {
             assert!(self.request_fds.is_empty());
-            self.request_tail -= buf.len();
-        } else {
-            let mut ptr = 0;
-            while ptr < buf.len() {
-                match P::process_send_stream(self, &mut buf[ptr..])? {
-                    StreamSendResult::WantMore => break,
-                    StreamSendResult::Processed {
-                        resources: rs,
-                        finalizers: fns,
-                        consumed_bytes: msg_size,
-                    } => {
-                        ptr += msg_size;
-                        resources.extend(rs);
-                        finalizers.extend(fns);
-                    },
-                }
-            }
-            if ptr < buf.len() {
-                self.request_head = buf[ptr..].to_vec();
-            } else {
-                self.request_tail = ptr - buf.len();
+
+            let consumed = self.request_tail.min(buf.len());
+            self.request_tail -= consumed;
+            ptr += consumed;
+        }
+
+        while ptr < buf.len() {
+            match P::process_send_stream(self, &mut buf[ptr..])? {
+                StreamSendResult::WantMore => break,
+                StreamSendResult::Processed {
+                    resources: rs,
+                    finalizers: fns,
+                    consumed_bytes: msg_size,
+                } => {
+                    ptr += msg_size;
+                    resources.extend(rs);
+                    finalizers.extend(fns);
+                },
             }
         }
+
+        if ptr > buf.len() {
+            // Track logical over-consumption
+            self.request_tail = ptr - buf.len();
+        } else if ptr < buf.len() {
+            // Preserve leftovers
+            self.request_head = buf[ptr..].to_vec();
+        }
+
         if !self.request_head.is_empty() {
             assert_eq!(self.request_tail, 0);
         }
