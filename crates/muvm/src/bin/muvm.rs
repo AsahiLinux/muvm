@@ -66,6 +66,38 @@ fn add_ro_disk(ctx_id: u32, label: &str, path: &str) -> Result<()> {
     }
 }
 
+fn pulse_path_from_xdg_runtime_dir(xdg_runtime_dir: &String) -> Result<CString> {
+    let pulse_path = Path::new(xdg_runtime_dir).join("pulse/native");
+    if pulse_path.exists() {
+        CString::new(
+            pulse_path
+                .to_str()
+                .expect("XDR_RUNTIME_DIR should not contain invalid UTF-8"),
+        )
+        .context("XDR_RUNTIME_DIR should not contain null characters")
+    } else {
+        Err(anyhow!(
+            "$XDR_RUNTIME_DIR/pulse/native (aka {}) doesn't exit",
+            pulse_path.to_string_lossy()
+        ))
+    }
+}
+
+fn pulse_path_from_pulse_server() -> Result<CString> {
+    let socket_uri = env::var("PULSE_SERVER")?;
+    let socket_path = socket_uri.strip_prefix("unix:").ok_or(anyhow!(
+        "Only the \"unix:\" scheme is supported in PULSE_SERVER"
+    ))?;
+
+    if Path::new(&socket_path).exists() {
+        CString::new(socket_path).context("PULSE_SERVER should not contain null characters")
+    } else {
+        Err(anyhow!(
+            "The socket in PULSE_SERVER ({socket_uri}) doesn't exit"
+        ))
+    }
+}
+
 fn main() -> Result<ExitCode> {
     env_logger::init();
 
@@ -291,23 +323,36 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    if let Ok(run_path) = env::var("XDG_RUNTIME_DIR") {
-        let pulse_path = Path::new(&run_path).join("pulse/native");
-        if pulse_path.exists() {
-            let pulse_path = CString::new(
-                pulse_path
-                    .to_str()
-                    .expect("pulse_path should not contain invalid UTF-8"),
-            )
-            .context("Failed to process `pulse/native` path as it contains NUL character")?;
-            // SAFETY: `pulse_path` is a pointer to a `CString` with long enough lifetime.
-            let err = unsafe { krun_add_vsock_port(ctx_id, PULSE_SOCKET, pulse_path.as_ptr()) };
-            if err < 0 {
-                let err = Errno::from_raw_os_error(-err);
-                return Err(err).context("Failed to configure vsock for pulse socket");
-            }
-        }
+    let xdg_runtime_dir = env::var("XDG_RUNTIME_DIR").ok();
+    let pulse_path = pulse_path_from_pulse_server()
+        .or_else(|err| {
+            if let Some(xdg_runtime_dir) = xdg_runtime_dir.as_ref() {
+                // In case pulse_path_from_xdg_runtime_dir() also returns
+                // an error, we want both to be printed.
+                eprintln!("{err}");
 
+                // As a fallback, try to get the pulse socket path
+                // from XDG_RUNTIME_DIR.
+                pulse_path_from_xdg_runtime_dir(xdg_runtime_dir)
+            } else {
+                Err(err)
+            }
+        })
+        .inspect_err(|err| {
+            eprintln!("{err}");
+        })
+        .ok();
+
+    if let Some(pulse_path) = pulse_path {
+        // SAFETY: `pulse_path` is a pointer to a `CString` with long enough lifetime.
+        let err = unsafe { krun_add_vsock_port(ctx_id, PULSE_SOCKET, pulse_path.as_ptr()) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure vsock for pulse socket");
+        }
+    }
+
+    if let Some(run_path) = xdg_runtime_dir {
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
         spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
         let hidpipe_path = CString::new(
