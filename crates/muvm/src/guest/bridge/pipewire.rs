@@ -300,19 +300,15 @@ impl ProtocolHandler for PipeWireProtocolHandler {
                 } else if hdr.opcode == PW_OPC_CLIENT_NODE_TRANSPORT {
                     let msg = ClientNodeTransport::new(&data[PipeWireHeader::SIZE..]);
                     // We need to take elements out by index without shifting the indices.
-                    let mut resources: Vec<_> = resources.drain(..hdr.num_fd).map(Some).collect();
-                    let writefd_rsc = resources.get_mut(msg.writefd as usize).ok_or(Errno::EIO)?;
-                    fds.push(Self::create_guest_to_host_eventfd(
-                        this,
-                        hdr.id,
-                        writefd_rsc.take().ok_or(Errno::EIO)?,
-                    )?);
-                    let readfd_rsc = resources.get_mut(msg.readfd as usize).ok_or(Errno::EIO)?;
-                    fds.push(Self::create_host_to_guest_eventfd(
-                        this,
-                        hdr.id,
-                        readfd_rsc.take().ok_or(Errno::EIO)?,
-                    )?);
+                    for (i, rsc) in resources.drain(..hdr.num_fd).enumerate() {
+                        if i == msg.writefd as usize {
+                            fds.push(Self::create_guest_to_host_eventfd(this, hdr.id, rsc)?);
+                        } else if i == msg.readfd as usize {
+                            fds.push(Self::create_host_to_guest_eventfd(this, hdr.id, rsc)?);
+                        } else {
+                            warn!("ClientNodeTransport: res #{i} is not readfd nor writefd");
+                        }
+                    }
                 } else {
                     unimplemented!()
                 }
