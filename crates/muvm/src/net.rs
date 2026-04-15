@@ -1,17 +1,55 @@
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use log::debug;
 use rustix::io::dup;
+
+use crate::cli_options::PasstSandboxPolicy;
 
 struct PublishSpec<'a> {
     udp: bool,
     guest_range: (u32, u32),
     host_range: (u32, u32),
     ip: &'a str,
+}
+
+fn ensure_passt_userns(child: &mut Child) -> Result<()> {
+    let host_userns =
+        std::fs::read_link("/proc/self/ns/user").context("Failed to read /proc/self/ns/user")?;
+    let pid = child.id();
+    let child_userns_path = format!("/proc/{pid}/ns/user");
+    let deadline = Instant::now() + Duration::from_secs(1);
+
+    while Instant::now() < deadline {
+        if let Some(status) = child
+            .try_wait()
+            .context("Failed to query `passt` process state")?
+        {
+            return Err(anyhow!(
+                "`passt` exited before sandbox check completed with status {status}"
+            ));
+        }
+
+        match std::fs::read_link(&child_userns_path) {
+            Ok(ns) if ns != host_userns => return Ok(()),
+            Ok(_) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(e).context("Failed to read child user namespace"),
+        }
+
+        sleep(Duration::from_millis(25));
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    Err(anyhow!(
+        "`passt` failed strict sandbox policy: no separate user namespace was established"
+    ))
 }
 
 fn parse_range(r: &str) -> Result<(u32, u32)> {
@@ -82,7 +120,10 @@ where
     Ok(UnixStream::connect(passt_socket_path)?)
 }
 
-pub fn start_passt(publish_ports: &[String]) -> Result<UnixStream> {
+pub fn start_passt(
+    publish_ports: &[String],
+    passt_sandbox_policy: PasstSandboxPolicy,
+) -> Result<UnixStream> {
     // SAFETY: The child process should not inherit the file descriptor of
     // `parent_socket`. There is no documented guarantee of this, but the
     // implementation as of writing atomically sets `SOCK_CLOEXEC`.
@@ -104,6 +145,9 @@ pub fn start_passt(publish_ports: &[String]) -> Result<UnixStream> {
     debug!(fd = child_fd.as_raw_fd(); "passing fd to passt");
 
     let mut cmd = Command::new("passt");
+    if passt_sandbox_policy != PasstSandboxPolicy::Warn {
+        cmd.stderr(Stdio::null());
+    }
     // SAFETY: `child_fd` is an `OwnedFd` and consumed to prevent closing on drop,
     // as it will now be owned by the child process.
     // See https://doc.rust-lang.org/std/io/index.html#io-safety
@@ -112,9 +156,11 @@ pub fn start_passt(publish_ports: &[String]) -> Result<UnixStream> {
     for spec in publish_ports {
         cmd.args(PublishSpec::parse(spec)?.to_args());
     }
-    let child = cmd.spawn();
-    if let Err(err) = child {
-        return Err(err).context("Failed to execute `passt` as child process");
+    let mut child = cmd
+        .spawn()
+        .context("Failed to execute `passt` as child process")?;
+    if passt_sandbox_policy == PasstSandboxPolicy::Strict {
+        ensure_passt_userns(&mut child).context("`passt` sandbox policy check failed")?;
     }
 
     Ok(parent_socket)

@@ -15,7 +15,7 @@ use krun_sys::{
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL, VIRGLRENDERER_VENUS,
 };
 use log::debug;
-use muvm::cli_options::options;
+use muvm::cli_options::{options, PasstSandboxPolicy};
 use muvm::config::Configuration;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
@@ -75,6 +75,14 @@ fn main() -> Result<ExitCode> {
     }
 
     let options = options().fallback_to_usage().run();
+    let disable_hid = options.no_hid || options.container_mode;
+    let passt_policy = options
+        .passt_sandbox_policy
+        .unwrap_or(if options.container_mode {
+            PasstSandboxPolicy::Silent
+        } else {
+            PasstSandboxPolicy::Warn
+        });
     let config = Configuration::parse_config_file()?;
 
     let mut init_commands = options.init_commands;
@@ -278,7 +286,7 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(&options.publish_ports)
+            start_passt(&options.publish_ports, passt_policy)
                 .context("Failed to start `passt`")?
                 .into()
         };
@@ -308,20 +316,22 @@ fn main() -> Result<ExitCode> {
             }
         }
 
-        let hidpipe_path = Path::new(&run_path).join("hidpipe");
-        spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
-        let hidpipe_path = CString::new(
-            hidpipe_path
-                .to_str()
-                .expect("hidpipe_path should not contain invalid UTF-8"),
-        )
-        .context("Failed to process `hidpipe` path as it contains NUL character")?;
+        if !disable_hid {
+            let hidpipe_path = Path::new(&run_path).join("hidpipe");
+            spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
+            let hidpipe_path = CString::new(
+                hidpipe_path
+                    .to_str()
+                    .expect("hidpipe_path should not contain invalid UTF-8"),
+            )
+            .context("Failed to process `hidpipe` path as it contains NUL character")?;
 
-        // SAFETY: `hidpipe_path` is a pointer to a `CString` with long enough lifetime.
-        let err = unsafe { krun_add_vsock_port(ctx_id, HIDPIPE_SOCKET, hidpipe_path.as_ptr()) };
-        if err < 0 {
-            let err = Errno::from_raw_os_error(-err);
-            return Err(err).context("Failed to configure vsock for hidpipe socket");
+            // SAFETY: `hidpipe_path` is a pointer to a `CString` with long enough lifetime.
+            let err = unsafe { krun_add_vsock_port(ctx_id, HIDPIPE_SOCKET, hidpipe_path.as_ptr()) };
+            if err < 0 {
+                let err = Errno::from_raw_os_error(-err);
+                return Err(err).context("Failed to configure vsock for hidpipe socket");
+            }
         }
 
         let socket_dir = Path::new(&run_path).join("krun/socket");

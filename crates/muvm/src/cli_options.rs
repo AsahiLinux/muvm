@@ -7,6 +7,25 @@ use bpaf::{any, construct, long, positional, OptionParser, Parser};
 use crate::types::MiB;
 use crate::utils::launch::Emulator;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasstSandboxPolicy {
+    Warn,
+    Strict,
+    Silent,
+}
+
+impl std::str::FromStr for PasstSandboxPolicy {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "warn" => Ok(Self::Warn),
+            "strict" => Ok(Self::Strict),
+            "silent" => Ok(Self::Silent),
+            x => Err(format!("Expected warn|strict|silent, got '{x}'")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum GpuMode {
     #[default]
@@ -42,6 +61,9 @@ pub struct Options {
     pub interactive: bool,
     pub tty: bool,
     pub privileged: bool,
+    pub no_hid: bool,
+    pub container_mode: bool,
+    pub passt_sandbox_policy: Option<PasstSandboxPolicy>,
     pub gpu_mode: Option<GpuMode>,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
@@ -149,6 +171,23 @@ pub fn options() -> OptionParser<Options> {
         This notably does not allow root access to the host fs.",
         )
         .switch();
+    let no_hid = long("no-hid").help("Disable HID device emulation").switch();
+    let container_mode = long("container-mode")
+        .help(
+            "Container-friendly defaults.
+            Implies --no-hid.
+            Also defaults --passt-sandbox-policy to 'silent' unless explicitly set.",
+        )
+        .switch();
+    let passt_sandbox_policy = long("passt-sandbox-policy")
+        .help(
+            "How to handle passt sandbox downgrade when starting passt internally:
+            warn   (default): print passt warnings to stderr and continue
+            strict: fail if passt doesn't enter a separate user namespace
+            silent: suppress passt warnings and continue",
+        )
+        .argument::<PasstSandboxPolicy>("warn|strict|silent")
+        .optional();
     let gpu_mode = long("gpu-mode")
         .help("Use the given GPU virtualization method")
         .argument::<GpuMode>("drm|venus|software")
@@ -197,6 +236,9 @@ pub fn options() -> OptionParser<Options> {
         interactive,
         tty,
         privileged,
+        no_hid,
+        container_mode,
+        passt_sandbox_policy,
         gpu_mode,
         publish_ports,
         emulator,
