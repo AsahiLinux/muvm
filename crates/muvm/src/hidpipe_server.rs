@@ -283,9 +283,12 @@ where
 pub fn spawn_hidpipe_server(socket_path: PathBuf) -> anyhow::Result<()> {
     let mut evdevs = EvdevContainer::new();
     let epoll = Epoll::new(EpollCreateFlags::empty()).context("Failed to create epoll object")?;
-    for dir_ent in
-        fs::read_dir("/dev/input/").context("Failed to read \"/dev/input/\" directory")?
-    {
+    let dir_ents = match fs::read_dir("/dev/input/") {
+        Ok(dir_ents) => Some(dir_ents),
+        Err(e) if e.kind() == ErrorKind::NotFound => None,
+        Err(e) => return Err(e).context("Failed to read /dev/input/ directory"),
+    };
+    for dir_ent in dir_ents.into_iter().flatten() {
         let dir_ent = dir_ent.context("Failed to read directory entry")?;
         if dir_ent
             .file_type()
