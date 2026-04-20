@@ -4,15 +4,15 @@ use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::{env, mem};
 
 use anyhow::Result;
-use log::debug;
+use log::{debug, warn};
 use nix::errno::Errno;
 use nix::sys::epoll::EpollFlags;
 use nix::sys::eventfd::{EfdFlags, EventFd};
 
 use crate::guest::bridge::common;
 use crate::guest::bridge::common::{
-    Client, CrossDomainHeader, CrossDomainResource, MessageResourceFinalizer, ProtocolHandler,
-    StreamRecvResult, StreamSendResult,
+    Client, CrossDomainHeader, CrossDomainResource, GemHandleFinalizer, MessageResourceFinalizer,
+    ProtocolHandler, StreamRecvResult, StreamSendResult,
 };
 
 const CROSS_DOMAIN_CHANNEL_TYPE_PW: u32 = 0x10;
@@ -27,6 +27,7 @@ const PW_OPC_CORE_CREATE_OBJECT: u8 = 6;
 const PW_OPC_CORE_ADD_MEM: u8 = 6;
 const PW_OPC_CLIENT_UPDATE_PROPERTIES: u8 = 2;
 const PW_OPC_CLIENT_NODE_TRANSPORT: u8 = 0;
+const PW_OPC_CLIENT_NODE_PORT_BUFFERS: u8 = 5;
 const PW_OPC_CLIENT_NODE_SET_ACTIVATION: u8 = 10;
 
 #[repr(C)]
@@ -165,13 +166,17 @@ impl PipeWireHeader {
     }
 }
 
-struct PipeWireResourceFinalizer;
+enum PipeWireResourceFinalizer {
+    Gem(GemHandleFinalizer),
+}
 
 impl MessageResourceFinalizer for PipeWireResourceFinalizer {
     type Handler = PipeWireProtocolHandler;
 
-    fn finalize(self, _: &mut Client<Self::Handler>) -> Result<()> {
-        unreachable!()
+    fn finalize(self, client: &mut Client<Self::Handler>) -> Result<()> {
+        match self {
+            Self::Gem(fin) => fin.finalize(client),
+        }
     }
 }
 
@@ -349,13 +354,41 @@ impl ProtocolHandler for PipeWireProtocolHandler {
                     .insert(msg.new_id, ClientNodeData::new());
             }
         }
+        let mut resources = Vec::with_capacity(hdr.num_fd);
+        let mut finalizers = Vec::with_capacity(hdr.num_fd);
         if hdr.num_fd != 0 {
-            unimplemented!();
+            let is_port_buffers = hdr.opcode == PW_OPC_CLIENT_NODE_PORT_BUFFERS
+                && this.protocol_handler.client_nodes.contains_key(&hdr.id);
+            if !is_port_buffers {
+                warn!(
+                    id = hdr.id,
+                    opcode = hdr.opcode,
+                    num_fd = hdr.num_fd;
+                    "Pipewire send: unexpected fd-bearing message",
+                );
+                return Err(Errno::EIO.into());
+            }
+            if this.request_fds.len() < hdr.num_fd {
+                warn!(
+                    id = hdr.id,
+                    opcode = hdr.opcode,
+                    expected_fds = hdr.num_fd,
+                    queued_fds = this.request_fds.len();
+                    "Pipewire send: short fd queue",
+                );
+                return Err(Errno::EIO.into());
+            }
+            let fds: Vec<OwnedFd> = this.request_fds.drain(..hdr.num_fd).collect();
+            for fd in fds {
+                let (res, finalizer) = this.vgpu_id_from_prime(fd)?;
+                resources.push(res);
+                finalizers.push(PipeWireResourceFinalizer::Gem(finalizer));
+            }
         };
         Ok(StreamSendResult::Processed {
             consumed_bytes: hdr.size,
-            resources: Vec::new(),
-            finalizers: Vec::new(),
+            resources,
+            finalizers,
         })
     }
 
