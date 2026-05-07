@@ -278,7 +278,7 @@ fn main() -> Result<ExitCode> {
                 .context("Failed to connect to `passt`")?
                 .into()
         } else {
-            start_passt(&options.publish_ports)
+            start_passt(&options.publish_ports, &options.passt_args)
                 .context("Failed to start `passt`")?
                 .into()
         };
