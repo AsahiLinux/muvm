@@ -82,7 +82,7 @@ where
     Ok(UnixStream::connect(passt_socket_path)?)
 }
 
-pub fn start_passt(publish_ports: &[String]) -> Result<UnixStream> {
+pub fn start_passt(publish_ports: &[String], passt_args: &[String]) -> Result<UnixStream> {
     // SAFETY: The child process should not inherit the file descriptor of
     // `parent_socket`. There is no documented guarantee of this, but the
     // implementation as of writing atomically sets `SOCK_CLOEXEC`.
@@ -111,6 +111,9 @@ pub fn start_passt(publish_ports: &[String]) -> Result<UnixStream> {
         .arg(format!("{}", child_fd.into_raw_fd()));
     for spec in publish_ports {
         cmd.args(PublishSpec::parse(spec)?.to_args());
+    }
+    for arg in passt_args {
+        cmd.arg(arg);
     }
     let child = cmd.spawn();
     if let Err(err) = child {

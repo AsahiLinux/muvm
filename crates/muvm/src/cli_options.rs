@@ -37,6 +37,7 @@ pub struct Options {
     pub mem: Option<MiB>,
     pub vram: Option<MiB>,
     pub passt_socket: Option<PathBuf>,
+    pub passt_args: Vec<String>,
     pub fex_images: Vec<String>,
     pub merged_rootfs: bool,
     pub interactive: bool,
@@ -135,6 +136,15 @@ pub fn options() -> OptionParser<Options> {
         .help("Instead of starting passt, connect to passt socket at PATH")
         .argument("PATH")
         .optional();
+    let passt_args = long("passt-args")
+        .help(
+            "When starting passt, append the given arguments.
+            May contain shell-quoted args, like so: --passt-args '-l \"my log file.txt\"'",
+        )
+        .argument::<String>("ARGS")
+        .parse(|s| shell_words::split(&s))
+        .many()
+        .map(|nested| nested.into_iter().flatten().collect());
     let interactive = long("interactive")
         .short('i')
         .help("Attach to the command's stdin/out after starting it")
@@ -192,6 +202,7 @@ pub fn options() -> OptionParser<Options> {
         mem,
         vram,
         passt_socket,
+        passt_args,
         fex_images,
         merged_rootfs,
         interactive,
