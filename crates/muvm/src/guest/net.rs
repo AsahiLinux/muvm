@@ -16,14 +16,15 @@ use neli::rtnl::{
 };
 use neli::types::RtBuffer;
 use neli::utils::Groups;
+use nix::net::if_::if_nametoindex;
 use rustix::system::sethostname;
 
-/// Set interface flags for eth0 (interface index 2) with a given mask
-fn flags_eth0(rtnl: &NlRouter, mask: Iff, set: Iff) -> Result<()> {
+/// Set interface flags with a given mask
+fn set_flags(rtnl: &NlRouter, if_index: i32, mask: Iff, set: Iff) -> Result<()> {
     let ifinfomsg = IfinfomsgBuilder::default()
         .ifi_family(RtAddrFamily::Unspecified)
         .ifi_type(Arphrd::Ether)
-        .ifi_index(2)
+        .ifi_index(if_index)
         .ifi_change(mask)
         .ifi_flags(set)
         .build()?;
@@ -34,12 +35,12 @@ fn flags_eth0(rtnl: &NlRouter, mask: Iff, set: Iff) -> Result<()> {
     Ok(())
 }
 
-/// Set MTU for eth0 (interface index 2)
-fn mtu_eth0(rtnl: &NlRouter, mtu: u32) -> Result<()> {
+/// Set interface MTU
+fn set_mtu(rtnl: &NlRouter, if_index: i32, mtu: u32) -> Result<()> {
     let ifinfomsg = IfinfomsgBuilder::default()
         .ifi_family(RtAddrFamily::Unspecified)
         .ifi_type(Arphrd::Ether)
-        .ifi_index(2)
+        .ifi_index(if_index)
         .rtattrs(RtBuffer::from_iter([RtattrBuilder::default()
             .rta_type(Ifla::Mtu)
             .rta_payload(mtu)
@@ -52,8 +53,8 @@ fn mtu_eth0(rtnl: &NlRouter, mtu: u32) -> Result<()> {
     Ok(())
 }
 
-/// Add or delete IPv4 routes for eth0 (interface index 2)
-fn route4_eth0(rtnl: &NlRouter, what: Rtm, gw: Ipv4Addr) -> Result<()> {
+/// Add or delete IPv4 routes
+fn update_route4(rtnl: &NlRouter, if_index: i32, what: Rtm, gw: Ipv4Addr) -> Result<()> {
     let rtmsg = RtmsgBuilder::default()
         .rtm_family(RtAddrFamily::Inet)
         .rtm_dst_len(0)
@@ -67,7 +68,7 @@ fn route4_eth0(rtnl: &NlRouter, what: Rtm, gw: Ipv4Addr) -> Result<()> {
         .rtattrs(RtBuffer::from_iter([
             RtattrBuilder::default()
                 .rta_type(Rta::Oif)
-                .rta_payload(2)
+                .rta_payload(if_index)
                 .build()?,
             RtattrBuilder::default()
                 .rta_type(Rta::Dst)
@@ -89,13 +90,19 @@ fn route4_eth0(rtnl: &NlRouter, what: Rtm, gw: Ipv4Addr) -> Result<()> {
     Ok(())
 }
 
-/// Add or delete IPv4 addresses for eth0 (interface index 2)
-fn addr4_eth0(rtnl: &NlRouter, what: Rtm, addr: Ipv4Addr, prefix_len: u8) -> Result<()> {
+/// Add or delete IPv4 addresses
+fn update_addr4(
+    rtnl: &NlRouter,
+    if_index: i32,
+    what: Rtm,
+    addr: Ipv4Addr,
+    prefix_len: u8,
+) -> Result<()> {
     let ifaddrmsg = IfaddrmsgBuilder::default()
         .ifa_family(RtAddrFamily::Inet)
         .ifa_prefixlen(prefix_len)
         .ifa_scope(RtScope::Universe)
-        .ifa_index(2)
+        .ifa_index(if_index)
         .rtattrs(RtBuffer::from_iter([
             RtattrBuilder::default()
                 .rta_type(Ifa::Local)
@@ -118,10 +125,16 @@ fn addr4_eth0(rtnl: &NlRouter, what: Rtm, addr: Ipv4Addr, prefix_len: u8) -> Res
 }
 
 /// Send DISCOVER with Rapid Commit, process ACK, configure address and route
-fn do_dhcp(rtnl: &NlRouter) -> Result<()> {
+fn do_dhcp(rtnl: &NlRouter, if_index: i32) -> Result<()> {
     // Temporary link-local address and route avoid the need for raw sockets
-    route4_eth0(rtnl, Rtm::Newroute, Ipv4Addr::UNSPECIFIED)?;
-    addr4_eth0(rtnl, Rtm::Newaddr, Ipv4Addr::new(169, 254, 1, 1), 16)?;
+    update_route4(rtnl, if_index, Rtm::Newroute, Ipv4Addr::UNSPECIFIED)?;
+    update_addr4(
+        rtnl,
+        if_index,
+        Rtm::Newaddr,
+        Ipv4Addr::new(169, 254, 1, 1),
+        16,
+    )?;
 
     // Send request (DHCPDISCOVER)
     let socket = UdpSocket::bind("0.0.0.0:68").expect("Failed to bind");
@@ -209,24 +222,36 @@ fn do_dhcp(rtnl: &NlRouter) -> Result<()> {
         let prefix_len: u8 = netmask.to_bits().leading_ones() as u8;
 
         // Drop temporary address and route, configure what we got instead
-        route4_eth0(rtnl, Rtm::Delroute, Ipv4Addr::UNSPECIFIED)?;
-        addr4_eth0(rtnl, Rtm::Deladdr, Ipv4Addr::new(169, 254, 1, 1), 16)?;
+        update_route4(rtnl, if_index, Rtm::Delroute, Ipv4Addr::UNSPECIFIED)?;
+        update_addr4(
+            rtnl,
+            if_index,
+            Rtm::Deladdr,
+            Ipv4Addr::new(169, 254, 1, 1),
+            16,
+        )?;
 
-        addr4_eth0(rtnl, Rtm::Newaddr, addr, prefix_len)?;
-        route4_eth0(rtnl, Rtm::Newroute, router)?;
+        update_addr4(rtnl, if_index, Rtm::Newaddr, addr, prefix_len)?;
+        update_route4(rtnl, if_index, Rtm::Newroute, router)?;
 
-        mtu_eth0(rtnl, mtu.into())?;
+        set_mtu(rtnl, if_index, mtu.into())?;
     } else {
         // Clean up: we're clearly too cool for IPv4
-        route4_eth0(rtnl, Rtm::Delroute, Ipv4Addr::UNSPECIFIED)?;
-        addr4_eth0(rtnl, Rtm::Deladdr, Ipv4Addr::new(169, 254, 1, 1), 16)?;
+        update_route4(rtnl, if_index, Rtm::Delroute, Ipv4Addr::UNSPECIFIED)?;
+        update_addr4(
+            rtnl,
+            if_index,
+            Rtm::Deladdr,
+            Ipv4Addr::new(169, 254, 1, 1),
+            16,
+        )?;
     }
 
     Ok(())
 }
 
 /// Wait for SLAAC to complete or fail
-fn wait_for_slaac(rtnl: &NlRouter) -> Result<()> {
+fn wait_for_slaac(rtnl: &NlRouter, if_index: i32) -> Result<()> {
     let mut global_seen = false;
     let mut global_wait = true;
     let mut ll_seen = false;
@@ -238,7 +263,7 @@ fn wait_for_slaac(rtnl: &NlRouter) -> Result<()> {
             .ifa_family(RtAddrFamily::Inet6)
             .ifa_prefixlen(0)
             .ifa_scope(RtScope::Universe)
-            .ifa_index(2)
+            .ifa_index(if_index)
             .build()?;
 
         let recv = rtnl.send(Rtm::Getaddr, NlmF::ROOT, NlPayload::Payload(ifaddrmsg))?;
@@ -291,26 +316,28 @@ pub fn configure_network() -> Result<()> {
     let (rtnl, _) = NlRouter::connect(NlFamily::Route, None, Groups::empty())?;
     rtnl.enable_strict_checking(true)?;
 
+    let if_index = if_nametoindex("eth0").context("Failed to get interface index for eth0")? as i32;
+
     // Disable neighbour solicitations (dodge DAD), bring up link to start SLAAC
     {
         // IFF_NOARP | IFF_UP in one shot delays router solicitations, avoid it
-        flags_eth0(&rtnl, Iff::NOARP, Iff::NOARP)?;
-        flags_eth0(&rtnl, Iff::UP, Iff::UP)?;
+        set_flags(&rtnl, if_index, Iff::NOARP, Iff::NOARP)?;
+        set_flags(&rtnl, if_index, Iff::UP, Iff::UP)?;
     }
 
     // Configure IPv4
     {
-        do_dhcp(&rtnl)?;
+        do_dhcp(&rtnl, if_index)?;
     }
 
     // Ensure IPv6 setup is done, if available
     {
-        wait_for_slaac(&rtnl)?;
+        wait_for_slaac(&rtnl, if_index)?;
     }
 
     // Re-enable neighbour solicitations and ARP requests
     {
-        flags_eth0(&rtnl, Iff::NOARP, Iff::empty())?;
+        set_flags(&rtnl, if_index, Iff::NOARP, Iff::empty())?;
     }
 
     Ok(())
