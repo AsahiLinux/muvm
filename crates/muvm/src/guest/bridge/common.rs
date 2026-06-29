@@ -479,6 +479,9 @@ pub struct Client<'a, P: ProtocolHandler> {
     debug_loop: DebugLoop,
     pub send_queue: VecDeque<SendPacket>,
     pub sub_poll: SubPoll<'a, P>,
+    /// Live GemHandleFinalizers per GEM handle. Multi-plane / same-BO DRI3 buffers
+    /// dedup several fds to one handle, so we refcount and close only on the last.
+    gem_handle_refs: HashMap<u32, u32>,
 }
 
 #[derive(Debug)]
@@ -493,6 +496,16 @@ pub struct GemHandleFinalizer(u32);
 
 impl GemHandleFinalizer {
     pub fn finalize<T: ProtocolHandler>(self, client: &mut Client<T>) -> Result<()> {
+        // Several fds can dedup to one handle (multi-plane / same-BO buffers), so a
+        // finalizer per fd would close it more than once -- EINVAL/ENOENT, tearing
+        // down the client. Close only on the last reference; real errors then matter.
+        if let Some(refs) = client.gem_handle_refs.get_mut(&self.0) {
+            if *refs > 1 {
+                *refs -= 1;
+                return Ok(());
+            }
+            client.gem_handle_refs.remove(&self.0);
+        }
         // SAFETY: we own self.0
         unsafe {
             let close = DrmGemClose::new(self.0);
@@ -520,6 +533,7 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
             debug_loop: DebugLoop::new(),
             send_queue: VecDeque::new(),
             sub_poll,
+            gem_handle_refs: HashMap::new(),
         }));
         {
             let mut borrow = this.borrow_mut();
@@ -709,6 +723,11 @@ impl<'a, P: ProtocolHandler> Client<'a, P> {
         unsafe {
             drm_virtgpu_resource_info(self.gpu_ctx.fd.as_raw_fd() as c_int, &mut res_info)?;
         }
+        // Count a live reference; only the last finalizer for this handle closes it.
+        self.gem_handle_refs
+            .entry(to_handle.handle)
+            .and_modify(|refcount| *refcount += 1)
+            .or_insert(1);
         Ok((
             CrossDomainResource {
                 identifier: res_info.res_handle,
