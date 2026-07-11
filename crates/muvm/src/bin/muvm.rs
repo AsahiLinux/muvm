@@ -9,7 +9,7 @@ use std::{env, fs};
 use anyhow::{anyhow, Context, Result};
 use krun_sys::{
     krun_add_disk, krun_add_virtiofs2, krun_add_vsock_port, krun_add_vsock_port2, krun_create_ctx,
-    krun_set_env, krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd, krun_set_root,
+    krun_set_env, krun_set_gpu_options2, krun_set_log_level, krun_set_passt_fd,
     krun_set_vm_config, krun_set_workdir, krun_start_enter, VIRGLRENDERER_DRM,
     VIRGLRENDERER_NO_VIRGL, VIRGLRENDERER_RENDER_SERVER, VIRGLRENDERER_THREAD_SYNC,
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL, VIRGLRENDERER_VENUS,
@@ -281,13 +281,7 @@ fn main() -> Result<ExitCode> {
         add_ro_disk(ctx_id, &path, &path).context("Failed to configure disk")?;
     }
 
-    {
-        // SAFETY: `root_path` is a pointer to a C-string literal.
-        let err = unsafe { krun_set_root(ctx_id, c"/".as_ptr()) };
-        if err < 0 {
-            let err = Errno::from_raw_os_error(-err);
-            return Err(err).context("Failed to configure root path");
-        }
+     // ... rest of the block continues with virtiofs2 config
 
         // SAFETY: `c_path` and `c_path` are pointers to C-string literals.
         let err = unsafe {
