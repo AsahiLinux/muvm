@@ -281,14 +281,13 @@ fn main() -> Result<ExitCode> {
         add_ro_disk(ctx_id, &path, &path).context("Failed to configure disk")?;
     }
 
-    {
+     {
         // SAFETY: `root_path` is a pointer to a C-string literal.
         let err = unsafe { krun_set_root(ctx_id, c"/".as_ptr()) };
         if err < 0 {
             let err = Errno::from_raw_os_error(-err);
             return Err(err).context("Failed to configure root path");
         }
-
         // SAFETY: `c_path` and `c_path` are pointers to C-string literals.
         let err = unsafe {
             krun_add_virtiofs2(
