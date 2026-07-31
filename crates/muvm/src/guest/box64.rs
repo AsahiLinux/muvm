@@ -8,11 +8,11 @@ use crate::utils::env::find_in_path;
 const BOX32_BINFMT_MISC_RULE: &str = ":BOX32:M:0:\\x7fELF\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\\
                                         x00\\x00\\x00\\x00\\x00\\x02\\x00\\x03\\x00:\\xff\\xff\\\
                                         xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\xff\\xff\\\
-                                        xff\\xff\\xff\\xfe\\xff\\xff\\xff:${BOX64}:POCF";
+                                        xff\\xff\\xff\\xfe\\xff\\xff\\xff:${BOX64}:OCF";
 const BOX64_BINFMT_MISC_RULE: &str =
     ":BOX64:M:0:\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\\
      x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\xff\\xff\\xff\\xff\\\
-     xff\\xfe\\xff\\xff\\xff:${BOX64}:POCF";
+     xff\\xfe\\xff\\xff\\xff:${BOX64}:OCF";
 
 pub fn setup_box() -> Result<()> {
     let box64_path = find_in_path("box64").context("Failed to check existence of `box64`")?;
