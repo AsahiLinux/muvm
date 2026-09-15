@@ -1,3 +1,4 @@
+pub mod atspi;
 pub mod box64;
 pub mod bridge;
 pub mod fex;
