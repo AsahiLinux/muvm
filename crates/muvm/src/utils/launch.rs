@@ -46,8 +46,10 @@ pub struct GuestConfiguration {
     pub cwd: PathBuf,
     pub init_commands: Vec<PathBuf>,
     pub user_init_commands: Vec<PathBuf>,
+    pub atspi_socket: Option<PathBuf>,
 }
 
 pub const PULSE_SOCKET: u32 = 3333;
 pub const HIDPIPE_SOCKET: u32 = PULSE_SOCKET + 1;
 pub const MUVM_GUEST_SOCKET: u32 = HIDPIPE_SOCKET + 1;
+pub const ATSPI_SOCKET: u32 = MUVM_GUEST_SOCKET + 1;

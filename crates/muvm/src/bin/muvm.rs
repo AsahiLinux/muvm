@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ffi::{c_char, CString};
 use std::io::Write;
 use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 use std::process::ExitCode;
 use std::{env, fs};
@@ -15,6 +16,7 @@ use krun_sys::{
     VIRGLRENDERER_USE_ASYNC_FENCE_CB, VIRGLRENDERER_USE_EGL, VIRGLRENDERER_VENUS,
 };
 use log::debug;
+use muvm::atspi::{configure_guest_env, discover_host_bus, guest_socket_path};
 use muvm::cli_options::options;
 use muvm::config::Configuration;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
@@ -25,7 +27,7 @@ use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
 use muvm::types::MiB;
 use muvm::utils::launch::{
-    GuestConfiguration, Launch, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET,
+    GuestConfiguration, Launch, ATSPI_SOCKET, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET,
 };
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
@@ -352,7 +354,7 @@ fn main() -> Result<ExitCode> {
         }
     }
 
-    if let Some(run_path) = xdg_runtime_dir {
+    if let Some(run_path) = &xdg_runtime_dir {
         let hidpipe_path = Path::new(&run_path).join("hidpipe");
         spawn_hidpipe_server(hidpipe_path.clone()).context("Failed to spawn hidpipe thread")?;
         let hidpipe_path = CString::new(
@@ -406,6 +408,28 @@ fn main() -> Result<ExitCode> {
     }
 
     let uid = getuid().as_raw();
+
+    // Retain any host socket alias until the VM exits.
+    let host_bus = xdg_runtime_dir
+        .as_deref()
+        .and_then(|path| discover_host_bus(Path::new(path)));
+    let atspi_socket = if let Some(host_bus) = &host_bus {
+        let host_path = host_bus.path();
+        let host_path_c = CString::new(host_path.as_os_str().as_bytes())
+            .context("Failed to process AT-SPI bus path as it contains NUL character")?;
+        // SAFETY: host_path_c is a pointer to a CString with long enough lifetime.
+        let err = unsafe { krun_add_vsock_port(ctx_id, ATSPI_SOCKET, host_path_c.as_ptr()) };
+        if err < 0 {
+            let err = Errno::from_raw_os_error(-err);
+            return Err(err).context("Failed to configure vsock for AT-SPI socket");
+        }
+        let guest_path = guest_socket_path(host_path, uid);
+        configure_guest_env(&mut env, &guest_path);
+        debug!(host:? = host_path, guest:? = guest_path; "AT-SPI bridge");
+        Some(guest_path)
+    } else {
+        None
+    };
     let user = User::from_uid(uid.into())
         .map_err(Into::into)
         .and_then(|user| user.ok_or_else(|| anyhow!("requested entry not found")))
@@ -458,6 +482,7 @@ fn main() -> Result<ExitCode> {
         cwd,
         init_commands,
         user_init_commands: options.user_init_commands,
+        atspi_socket,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;

@@ -6,6 +6,7 @@ use std::process::{Command, ExitCode};
 use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
+use muvm::guest::atspi::{bind_atspi_socket, run_atspi_bridge};
 use muvm::guest::box64::setup_box;
 use muvm::guest::bridge::pipewire::start_pwbridge;
 use muvm::guest::bridge::x11::start_x11bridge;
@@ -127,15 +128,13 @@ fn main() -> Result<ExitCode> {
         Err(err) => return Err(err).context("Failed to set up user, bailing out"),
     };
 
-    for init_command in options.user_init_commands {
-        let code = Command::new(&init_command)
-            .current_dir(&options.cwd)
-            .spawn()?
-            .wait()?;
-        if !code.success() {
-            return Err(anyhow!("Executing `{}` failed", init_command.display()));
-        }
-    }
+    let atspi_listener = options.atspi_socket.as_deref().and_then(|path| {
+        bind_atspi_socket(path)
+            .inspect_err(|err| {
+                eprintln!("Failed to set up AT-SPI bridge, accessibility will not work: {err:#}");
+            })
+            .ok()
+    });
 
     let pulse_path = run_path.join("pulse");
     std::fs::create_dir(&pulse_path)
@@ -161,5 +160,20 @@ fn main() -> Result<ExitCode> {
     });
 
     let rt = tokio::runtime::Runtime::new().unwrap();
+    if let Some(listener) = atspi_listener {
+        rt.spawn(run_atspi_bridge(listener));
+    }
+
+    // Init commands may connect to AT-SPI before the guest server starts.
+    for init_command in options.user_init_commands {
+        let code = Command::new(&init_command)
+            .current_dir(&options.cwd)
+            .spawn()?
+            .wait()?;
+        if !code.success() {
+            return Err(anyhow!("Executing `{}` failed", init_command.display()));
+        }
+    }
+
     rt.block_on(async { server_main(options.command.command, options.command.command_args).await })
 }

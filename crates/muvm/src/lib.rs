@@ -1,3 +1,4 @@
+pub mod atspi;
 pub mod cli_options;
 pub mod config;
 pub mod cpu;
