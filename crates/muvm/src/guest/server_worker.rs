@@ -393,15 +393,11 @@ fn run_io_guest(
             match evts[0].data() {
                 1 | 2 => {
                     let mut buf = [0; 4096];
-                    let len;
-                    let opc;
-                    if evts[0].data() == 1 {
-                        len = stdout.read(&mut buf)?;
-                        opc = CMD_WRITE_STDOUT;
+                    let (len, opc) = if evts[0].data() == 1 {
+                        (stdout.read(&mut buf)?, CMD_WRITE_STDOUT)
                     } else {
-                        len = stderr.as_mut().unwrap().read(&mut buf)?;
-                        opc = CMD_WRITE_STDERR;
-                    }
+                        (stderr.as_mut().unwrap().read(&mut buf)?, CMD_WRITE_STDERR)
+                    };
                     let cmd = ((len << CMD_SHIFT) as u16 | opc).to_le_bytes();
                     vsock.write_all(&cmd)?;
                     vsock.write_all(&buf[..len])?;
