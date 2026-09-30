@@ -103,12 +103,16 @@ fn pulse_path_from_pulse_server() -> Result<CString> {
 fn main() -> Result<ExitCode> {
     env_logger::init();
 
+    let options = options().fallback_to_usage().run();
+
     if getuid().as_raw() == 0 || geteuid().as_raw() == 0 {
         println!("Running as root is not supported as it may break your system");
         return Err(anyhow!("real user ID or effective user ID is 0"));
     }
 
-    let options = options().fallback_to_usage().run();
+    let command = options
+        .command
+        .ok_or_else(|| anyhow!("expected `COMMAND`, pass `--help` for usage information"))?;
     let config = Configuration::parse_config_file()?;
 
     let mut init_commands = options.init_commands;
@@ -117,7 +121,7 @@ fn main() -> Result<ExitCode> {
     }
 
     let (_lock_file, command, command_args, env) = match launch_or_lock(
-        options.command,
+        command,
         options.command_args,
         options.env,
         options.interactive,
