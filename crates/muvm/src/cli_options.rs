@@ -48,7 +48,7 @@ pub struct Options {
     pub emulator: Option<Emulator>,
     pub init_commands: Vec<PathBuf>,
     pub user_init_commands: Vec<PathBuf>,
-    pub command: PathBuf,
+    pub command: Option<PathBuf>,
     pub command_args: Vec<String>,
 }
 
@@ -189,9 +189,11 @@ pub fn options() -> OptionParser<Options> {
         )
         .argument("COMMAND")
         .many();
-    let command = positional("COMMAND").help("the command you want to execute in the vm");
+    let command = positional("COMMAND")
+        .help("the command you want to execute in the vm")
+        .optional();
     let command_args = any::<String, _, _>("COMMAND_ARGS", |arg| {
-        (!["--help", "-h"].contains(&&*arg)).then_some(arg)
+        (!["--help", "-h", "--version", "-V"].contains(&&*arg)).then_some(arg)
     })
     .help("arguments of COMMAND")
     .many();
@@ -218,6 +220,7 @@ pub fn options() -> OptionParser<Options> {
         command_args,
     })
     .to_options()
+    .version(env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(test)]
