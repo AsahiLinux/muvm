@@ -43,6 +43,7 @@ pub struct Options {
     pub interactive: bool,
     pub tty: bool,
     pub privileged: bool,
+    pub session_bus: bool,
     pub gpu_mode: Option<GpuMode>,
     pub publish_ports: Vec<String>,
     pub emulator: Option<Emulator>,
@@ -163,6 +164,9 @@ pub fn options() -> OptionParser<Options> {
         .help("Use the given GPU virtualization method")
         .argument::<GpuMode>("drm|venus|software")
         .optional();
+    let session_bus = long("session-bus")
+        .help("Forward the host session D-Bus into a newly started VM (without file descriptor passing)")
+        .switch();
     let publish_ports = long("publish")
         .short('p')
         .help(
@@ -208,6 +212,7 @@ pub fn options() -> OptionParser<Options> {
         interactive,
         tty,
         privileged,
+        session_bus,
         gpu_mode,
         publish_ports,
         emulator,
@@ -227,5 +232,16 @@ mod tests {
     #[test]
     fn check_options() {
         options().check_invariants(false)
+    }
+
+    #[test]
+    fn session_bus_is_opt_in_and_preserves_command_arguments() {
+        let args = options()
+            .run_inner(&["--session-bus", "--", "true", "argument with spaces"])
+            .unwrap();
+        assert!(args.session_bus);
+        assert_eq!(args.command, PathBuf::from("true"));
+        assert_eq!(args.command_args, ["argument with spaces"]);
+        assert!(!options().run_inner(&["true"]).unwrap().session_bus);
     }
 }

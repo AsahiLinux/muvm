@@ -20,7 +20,7 @@ pub struct HostBus {
 }
 
 impl HostBus {
-    fn new(path: PathBuf, runtime_dir: &Path) -> Result<Self> {
+    pub(crate) fn new(path: PathBuf, runtime_dir: &Path, alias_name: &str) -> Result<Self> {
         if path.to_str().is_some() {
             return Ok(Self { path, alias: false });
         }
@@ -29,14 +29,14 @@ impl HostBus {
         // Its normal shutdown uses _exit, so reuse one runtime-directory alias
         // under the launcher's VM lock instead of leaking a temporary directory.
         let dir = runtime_dir.join("krun");
-        let alias_path = dir.join("atspi");
+        let alias_path = dir.join(alias_name);
         if alias_path.to_str().is_none() {
-            bail!("AT-SPI host alias path is not UTF-8");
+            bail!("D-Bus host alias path is not UTF-8");
         }
         fs::create_dir_all(dir)?;
         match fs::symlink_metadata(&alias_path) {
             Ok(meta) if meta.file_type().is_symlink() => fs::remove_file(&alias_path)?,
-            Ok(_) => bail!("AT-SPI host alias {alias_path:?} already exists and is not a symlink"),
+            Ok(_) => bail!("D-Bus host alias {alias_path:?} already exists and is not a symlink"),
             Err(err) if err.kind() == ErrorKind::NotFound => {},
             Err(err) => return Err(err.into()),
         }
@@ -62,7 +62,7 @@ impl Drop for HostBus {
     }
 }
 
-fn parse_unix_path_address(address: &str) -> Option<PathBuf> {
+pub(crate) fn parse_unix_path_address(address: &str) -> Option<PathBuf> {
     if address.contains(';') {
         return None;
     }
@@ -134,7 +134,7 @@ pub fn configure_guest_env(env: &mut HashMap<String, String>, guest_path: &Path)
         .or_insert_with(|| "1".to_owned());
 }
 
-fn can_connect(path: &Path) -> bool {
+pub(crate) fn can_connect(path: &Path) -> bool {
     // A full listen queue must not block startup.
     let result = UnixAddr::new(path).and_then(|address| {
         let fd = socket(
@@ -146,7 +146,7 @@ fn can_connect(path: &Path) -> bool {
         connect(fd.as_raw_fd(), &address)
     });
     if let Err(err) = result {
-        debug!(path:?, err:?; "AT-SPI bus socket is unavailable");
+        debug!(path:?, err:?; "D-Bus socket is unavailable");
     }
     result.is_ok()
 }
@@ -201,7 +201,7 @@ pub fn discover_host_bus(runtime_dir: &Path) -> Option<HostBus> {
         },
     };
     let path = path_from_address(source, &address).filter(|path| can_connect(path))?;
-    HostBus::new(path, runtime_dir)
+    HostBus::new(path, runtime_dir, "atspi")
         .inspect_err(|err| {
             eprintln!(
                 "Failed to prepare host AT-SPI socket, accessibility bridge disabled: {err:#}"

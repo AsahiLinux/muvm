@@ -25,9 +25,11 @@ use muvm::hidpipe_server::spawn_hidpipe_server;
 use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
 use muvm::net::{connect_to_passt, start_passt};
+use muvm::session_bus;
 use muvm::types::MiB;
 use muvm::utils::launch::{
     GuestConfiguration, Launch, ATSPI_SOCKET, HIDPIPE_SOCKET, MUVM_GUEST_SOCKET, PULSE_SOCKET,
+    SESSION_BUS_SOCKET,
 };
 use nix::sys::sysinfo::sysinfo;
 use nix::unistd::User;
@@ -409,6 +411,33 @@ fn main() -> Result<ExitCode> {
 
     let uid = getuid().as_raw();
 
+    // Keep the host socket alias alive for the lifetime of the VM. Session-bus
+    // access is opt-in: applications can call services running on the host.
+    let session_bus = if options.session_bus {
+        let runtime_dir = xdg_runtime_dir
+            .as_deref()
+            .context("--session-bus requires XDG_RUNTIME_DIR")?;
+        Some(session_bus::discover_host_bus(Path::new(runtime_dir))?)
+    } else {
+        None
+    };
+    let session_bus_socket = if let Some(bus) = &session_bus {
+        let path = CString::new(bus.path().as_os_str().as_bytes())?;
+        // SAFETY: path is a CString with a lifetime exceeding the call.
+        let err = unsafe { krun_add_vsock_port(ctx_id, SESSION_BUS_SOCKET, path.as_ptr()) };
+        if err < 0 {
+            return Err(Errno::from_raw_os_error(-err))
+                .context("Failed to configure vsock for session D-Bus");
+        }
+        env.insert(
+            "DBUS_SESSION_BUS_ADDRESS".to_owned(),
+            session_bus::guest_address(uid),
+        );
+        Some(session_bus::guest_socket_path(uid))
+    } else {
+        None
+    };
+
     // Retain any host socket alias until the VM exits.
     let host_bus = xdg_runtime_dir
         .as_deref()
@@ -483,6 +512,7 @@ fn main() -> Result<ExitCode> {
         init_commands,
         user_init_commands: options.user_init_commands,
         atspi_socket,
+        session_bus_socket,
     };
     let mut muvm_config_file = NamedTempFile::new()
         .context("Failed to create a temporary file to store the muvm guest config")?;

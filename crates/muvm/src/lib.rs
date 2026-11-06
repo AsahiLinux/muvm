@@ -8,6 +8,7 @@ pub mod hidpipe_server;
 pub mod launch;
 pub mod monitor;
 pub mod net;
+pub mod session_bus;
 pub mod types;
 
 pub mod guest;

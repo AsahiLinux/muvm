@@ -66,6 +66,15 @@ If `DISPLAY` is set, `muvm` uses X11 forwarding to allow you to run graphical ap
 
 GPU acceleration is also enabled on systems supporting [DRM native context](https://indico.freedesktop.org/event/2/contributions/53/attachments/76/121/XDC2022_%20virtgpu%20drm%20native%20context.pdf) (freedreno, amdgpu, asahi).
 
+Use `muvm --session-bus -- COMMAND` when starting a new VM to let applications
+use the host's session D-Bus, for example to register Steam's tray icon. This
+grants guest applications access to the host user's session services. It supports
+a single `unix:path` address in `DBUS_SESSION_BUS_ADDRESS`, falling back to
+`$XDG_RUNTIME_DIR/bus` when that variable is unset. The guest gets its own socket
+at `/run/user/<uid>/bus`; file descriptor passing is disabled because vsock cannot
+carry descriptors. The system D-Bus is not forwarded. Restart an existing VM to
+change whether the session bus is forwarded.
+
 ## Running x86/x86_64 on aarch64
 
 If [FEX-Emu](https://fex-emu.com/) is installed in your system, `muvm` will configure `binfmt_misc` inside the microVM so x86/x86_64 programs can be run transparently on it.

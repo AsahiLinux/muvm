@@ -6,10 +6,10 @@ use std::process::{Command, ExitCode};
 use std::{cmp, env, fs, thread};
 
 use anyhow::{anyhow, Context, Result};
-use muvm::guest::atspi::{bind_atspi_socket, run_atspi_bridge};
 use muvm::guest::box64::setup_box;
 use muvm::guest::bridge::pipewire::start_pwbridge;
 use muvm::guest::bridge::x11::start_x11bridge;
+use muvm::guest::dbus::{bind_dbus_socket, run_dbus_bridge};
 use muvm::guest::fex::setup_fex;
 use muvm::guest::hidpipe::start_hidpipe;
 use muvm::guest::mount::mount_filesystems;
@@ -19,7 +19,9 @@ use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
 use muvm::guest::x11::setup_x11_forwarding;
 use muvm::utils::env::get_var_if_exists;
-use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
+use muvm::utils::launch::{
+    Emulator, GuestConfiguration, ATSPI_SOCKET, PULSE_SOCKET, SESSION_BUS_SOCKET,
+};
 use nix::unistd::{Gid, Uid};
 use rustix::process::{getrlimit, setrlimit, Resource};
 
@@ -129,12 +131,19 @@ fn main() -> Result<ExitCode> {
     };
 
     let atspi_listener = options.atspi_socket.as_deref().and_then(|path| {
-        bind_atspi_socket(path)
+        bind_dbus_socket(path)
             .inspect_err(|err| {
                 eprintln!("Failed to set up AT-SPI bridge, accessibility will not work: {err:#}");
             })
             .ok()
     });
+
+    let session_bus_listener = options
+        .session_bus_socket
+        .as_deref()
+        .map(bind_dbus_socket)
+        .transpose()
+        .context("Failed to set up session D-Bus bridge")?;
 
     let pulse_path = run_path.join("pulse");
     std::fs::create_dir(&pulse_path)
@@ -161,7 +170,10 @@ fn main() -> Result<ExitCode> {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     if let Some(listener) = atspi_listener {
-        rt.spawn(run_atspi_bridge(listener));
+        rt.spawn(run_dbus_bridge(listener, ATSPI_SOCKET));
+    }
+    if let Some(listener) = session_bus_listener {
+        rt.spawn(run_dbus_bridge(listener, SESSION_BUS_SOCKET));
     }
 
     // Init commands may connect to AT-SPI before the guest server starts.

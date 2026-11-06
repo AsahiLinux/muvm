@@ -16,8 +16,6 @@ use nix::unistd::getuid;
 use tokio::io::{copy_bidirectional, AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::utils::launch::ATSPI_SOCKET;
-
 #[derive(Default)]
 struct SaslOutput {
     to_server: Vec<u8>,
@@ -236,10 +234,10 @@ fn sasl_response(response: &[u8]) -> Option<&[u8]> {
     (response.len() % 2 == 0 && response.iter().all(u8::is_ascii_hexdigit)).then_some(response)
 }
 
-pub fn bind_atspi_socket(path: &Path) -> Result<StdUnixListener> {
+pub fn bind_dbus_socket(path: &Path) -> Result<StdUnixListener> {
     let dir = path
         .parent()
-        .ok_or_else(|| anyhow!("AT-SPI socket path {path:?} has no parent directory"))?;
+        .ok_or_else(|| anyhow!("D-Bus socket path {path:?} has no parent directory"))?;
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -255,11 +253,11 @@ pub fn bind_atspi_socket(path: &Path) -> Result<StdUnixListener> {
         StdUnixListener::bind(path).with_context(|| format!("Failed to bind {path:?}"))?;
     listener
         .set_nonblocking(true)
-        .context("Failed to set AT-SPI listener nonblocking")?;
+        .context("Failed to set D-Bus listener nonblocking")?;
     Ok(listener)
 }
 
-fn connect_host() -> Result<StdUnixStream> {
+fn connect_host(port: u32) -> Result<StdUnixStream> {
     let fd = socket(
         AddressFamily::Vsock,
         SockType::Stream,
@@ -267,11 +265,8 @@ fn connect_host() -> Result<StdUnixStream> {
         None,
     )
     .context("Failed to create vsock socket")?;
-    connect(
-        fd.as_raw_fd(),
-        &VsockAddr::new(VMADDR_CID_HOST, ATSPI_SOCKET),
-    )
-    .context("Failed to connect to host AT-SPI bus over vsock")?;
+    connect(fd.as_raw_fd(), &VsockAddr::new(VMADDR_CID_HOST, port))
+        .context("Failed to connect to host D-Bus bus over vsock")?;
     let stream = StdUnixStream::from(fd);
     stream
         .set_nonblocking(true)
@@ -279,8 +274,8 @@ fn connect_host() -> Result<StdUnixStream> {
     Ok(stream)
 }
 
-async fn proxy_connection(mut client: UnixStream) -> Result<()> {
-    let server = tokio::task::spawn_blocking(connect_host)
+async fn proxy_connection(mut client: UnixStream, port: u32) -> Result<()> {
+    let server = tokio::task::spawn_blocking(move || connect_host(port))
         .await
         .context("vsock connect task failed")??;
     let mut server = UnixStream::from_std(server)?;
@@ -313,11 +308,11 @@ async fn proxy_connection(mut client: UnixStream) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_atspi_bridge(listener: StdUnixListener) {
+pub async fn run_dbus_bridge(listener: StdUnixListener, port: u32) {
     let listener = match UnixListener::from_std(listener) {
         Ok(listener) => listener,
         Err(err) => {
-            eprintln!("AT-SPI bridge: failed to register listener: {err}");
+            eprintln!("D-Bus bridge: failed to register listener: {err}");
             return;
         },
     };
@@ -325,16 +320,102 @@ pub async fn run_atspi_bridge(listener: StdUnixListener) {
         match listener.accept().await {
             Ok((client, _)) => {
                 tokio::spawn(async move {
-                    if let Err(err) = proxy_connection(client).await {
-                        debug!(err:? = err; "AT-SPI bridge connection closed");
+                    if let Err(err) = proxy_connection(client, port).await {
+                        debug!(err:? = err; "D-Bus bridge connection closed");
                     }
                 });
             },
             Err(err) => {
-                eprintln!("AT-SPI bridge: failed to accept incoming connection: {err}");
+                eprintln!("D-Bus bridge: failed to accept incoming connection: {err}");
                 // Back off on temporary errors such as EMFILE.
                 tokio::time::sleep(Duration::from_secs(1)).await;
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipelined_fd_negotiation_is_rejected_in_reply_order() {
+        let mut filter = SaslFilter::new(1000);
+        let out = filter
+            .feed_client(b"\0AUTH EXTERNAL 30\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\nmessage")
+            .unwrap();
+        assert_eq!(
+            out.to_server,
+            b"\0AUTH EXTERNAL 31303030\r\nBEGIN\r\nmessage"
+        );
+        assert!(out.to_client.is_empty());
+        assert!(!filter.done());
+        assert_eq!(
+            filter.feed_server(b"OK guid\r\nreply").unwrap(),
+            b"OK guid\r\nERROR\r\nreply"
+        );
+        assert!(filter.done());
+    }
+
+    #[test]
+    fn external_auth_without_initial_response_preserves_challenge() {
+        let mut filter = SaslFilter::new(1000);
+        assert_eq!(
+            filter
+                .feed_client(b"\0AUTH EXTERNAL\r\n")
+                .unwrap()
+                .to_server,
+            b"\0AUTH EXTERNAL\r\n"
+        );
+        assert_eq!(filter.feed_server(b"DATA\r\n").unwrap(), b"DATA\r\n");
+        assert_eq!(
+            filter.feed_client(b"DATA 30\r\n").unwrap().to_server,
+            b"DATA 31303030\r\n"
+        );
+        assert_eq!(filter.feed_server(b"OK guid\r\n").unwrap(), b"OK guid\r\n");
+        assert_eq!(
+            filter
+                .feed_client(b"NEGOTIATE_UNIX_FD\r\n")
+                .unwrap()
+                .to_client,
+            b"ERROR\r\n"
+        );
+        assert_eq!(
+            filter.feed_client(b"BEGIN\r\n").unwrap().to_server,
+            b"BEGIN\r\n"
+        );
+        assert!(filter.done());
+    }
+
+    #[test]
+    fn fragmented_authentication_and_binary_messages_are_preserved() {
+        let mut filter = SaslFilter::new(1000);
+        assert_eq!(filter.feed_client(b"\0AU").unwrap().to_server, b"\0");
+        assert_eq!(
+            filter
+                .feed_client(b"TH EXTERNAL 31303030\r\n")
+                .unwrap()
+                .to_server,
+            b"AUTH EXTERNAL 31303030\r\n"
+        );
+        assert!(filter.feed_server(b"OK guid\r").unwrap().is_empty());
+        assert_eq!(filter.feed_server(b"\n").unwrap(), b"OK guid\r\n");
+        assert_eq!(
+            filter.feed_client(b"BEGIN\r\n\0\xff").unwrap().to_server,
+            b"BEGIN\r\n\0\xff"
+        );
+        assert_eq!(filter.feed_server(b"\0\xff").unwrap(), b"\0\xff");
+    }
+
+    #[test]
+    fn malformed_and_unbounded_authentication_is_rejected() {
+        assert!(SaslFilter::new(1000)
+            .feed_client(b"AUTH EXTERNAL\r\n")
+            .is_err());
+        let mut filter = SaslFilter::new(1000);
+        filter.feed_client(b"\0").unwrap();
+        assert!(filter
+            .feed_client(&vec![b'A'; SaslFilter::MAX_LINE + 1])
+            .is_err());
     }
 }
