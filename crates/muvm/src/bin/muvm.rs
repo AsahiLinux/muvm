@@ -21,6 +21,7 @@ use muvm::cli_options::options;
 use muvm::config::Configuration;
 use muvm::cpu::{get_fallback_cores, get_performance_cores};
 use muvm::env::{find_muvm_exec, prepare_env_vars};
+use muvm::guest::wayland::plain_wayland_display;
 use muvm::hidpipe_server::spawn_hidpipe_server;
 use muvm::launch::{launch_or_lock, LaunchResult, DYNAMIC_PORT_RANGE};
 use muvm::monitor::spawn_monitor;
@@ -465,6 +466,7 @@ fn main() -> Result<ExitCode> {
 
     let cwd = env::current_dir()?;
     let display = env::var("DISPLAY").ok();
+    let wayland_display = plain_wayland_display(env::var("WAYLAND_DISPLAY").ok());
     let guest_config = GuestConfiguration {
         command: Launch {
             command,
@@ -477,6 +479,7 @@ fn main() -> Result<ExitCode> {
         uid,
         gid: getgid().as_raw(),
         host_display: display,
+        host_wayland_display: wayland_display,
         merged_rootfs: options.merged_rootfs,
         emulator: options.emulator,
         cwd,

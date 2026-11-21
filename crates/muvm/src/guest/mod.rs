@@ -9,4 +9,5 @@ pub mod server;
 pub mod server_worker;
 pub mod socket;
 pub mod user;
+pub mod wayland;
 pub mod x11;

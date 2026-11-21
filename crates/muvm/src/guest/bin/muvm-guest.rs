@@ -17,6 +17,7 @@ use muvm::guest::net::configure_network;
 use muvm::guest::server::server_main;
 use muvm::guest::socket::setup_socket_proxy;
 use muvm::guest::user::setup_user;
+use muvm::guest::wayland::setup_wayland_forwarding;
 use muvm::guest::x11::setup_x11_forwarding;
 use muvm::utils::env::get_var_if_exists;
 use muvm::utils::launch::{Emulator, GuestConfiguration, PULSE_SOCKET};
@@ -141,6 +142,10 @@ fn main() -> Result<ExitCode> {
         .context("Failed to create `pulse` directory in `XDG_RUNTIME_DIR`")?;
     let pulse_path = pulse_path.join("native");
     setup_socket_proxy(pulse_path, PULSE_SOCKET)?;
+
+    if let Some(host_wayland_display) = options.host_wayland_display {
+        setup_wayland_forwarding(&run_path, &host_wayland_display)?;
+    }
 
     if let Some(host_display) = options.host_display {
         setup_x11_forwarding(run_path, &host_display)?;
